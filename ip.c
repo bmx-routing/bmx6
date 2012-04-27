@@ -2456,8 +2456,10 @@ int update_interface_rules(void)
 
                         assertion(-500609, is_ip_set(&ian->ip_addr));
 
+/*
                         if (ian->ifa.ifa_family != AF_CFG)
                                 continue;
+*/
 
                         if (!ian->ifa.ifa_prefixlen)
                                 continue;
@@ -2482,10 +2484,11 @@ int update_interface_rules(void)
                                 continue;
 
                         struct net_key throw;
-                        setNet(&throw, AF_CFG, ian->ifa.ifa_prefixlen, &ian->ip_addr);
+                        setNet(&throw, ian->ifa.ifa_family, ian->ifa.ifa_prefixlen, &ian->ip_addr);
                         ip_netmask_validate(&throw.ip, throw.mask, throw.af, YES);
 
-                        ip(IP_THROW_MY_NET, ADD, NO, &throw, RT_TABLE_HNA, 0, 0, 0, 0, 0, 0);
+                        ip(IP_THROW_MY_NET, ADD, NO, &throw, RT_TABLE_HNA, RT_PRIO_HNA, 0, throw.af == AF_INET6, 0, 0, 0);
+                        ip(IP_THROW_MY_NET, ADD, NO, &throw, RT_TABLE_TUN, RT_PRIO_TUNS, 0, throw.af == AF_INET6, 0, 0, 0);
 
                 }
         }
@@ -2938,7 +2941,7 @@ int32_t opt_ip_version(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 
                         if (val) {
 
-                                if (is_policy_rt_supported() != val) {
+                                if (!is_policy_rt_supported()) {
 
                                         dbgf_sys(DBGT_ERR, "Kernel policy-routing support required for %s=%d %c%s=%d",
                                                 ARG_IP, ip_tmp, LONG_OPT_ARG_DELIMITER_CHAR, c->opt->name, val);
