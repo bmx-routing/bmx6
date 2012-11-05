@@ -13,6 +13,9 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301, USA
+ *
+ * Contributors:
+ *	Simó Albert i Beltran
  */
 
 #include <stdio.h>
@@ -584,6 +587,8 @@ int32_t rm_dir_content(char* dir_name, char* prefix)
                         }
                 }
         }
+
+        closedir(dir);
 
         return SUCCESS;
 }
