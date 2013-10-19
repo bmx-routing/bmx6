@@ -127,8 +127,6 @@ struct dev_node *primary_dev = NULL;
 struct dev_node *primary_phy = NULL;
 
 
-//IDM_T niit_enabled = NO;
-
 AVL_TREE(if_link_tree, struct if_link_node, index);
 
 AVL_TREE(dev_ip_tree, struct dev_node, llip_key);

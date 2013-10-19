@@ -266,7 +266,6 @@ extern int dev_lo_idx;
 
 extern struct dev_node *primary_dev;
 extern struct dev_node *primary_phy;
-extern IDM_T niit_enabled;
 
 
 extern int32_t ip_prio_hna_cfg;

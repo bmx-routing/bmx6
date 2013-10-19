@@ -76,9 +76,6 @@ static const struct tun_net_key ZERO_TUN_NET_KEY = {.ton = NULL};
 //static struct net_key tun6_address = ZERO_NET_KEY_INIT;
 //char* tun6_dev = NULL;
 
-IDM_T (*hna_configure_niit4to6) (IDM_T del, struct net_key *key) = NULL;
-IDM_T (*hna_configure_niit6to4) (IDM_T del, struct net_key *key) = NULL;
-
 
 
 IFNAME_T tun_name_prefix = {{DEF_TUN_NAME_PREFIX}};
@@ -488,8 +485,6 @@ void configure_hna(IDM_T del, struct net_key* key, struct orig_node *on, uint8_t
         } else if (on->curr_rt_lndev && !(flags & DESC_MSG_HNA_FLAG_NO_ROUTE)) {
 
                 configure_route(del, on, key);
-                if (hna_configure_niit4to6)
-                        (*hna_configure_niit4to6)(del, key);
         }
 
 
@@ -544,9 +539,7 @@ int process_description_tlv_hna(struct rx_frame_iterator *it)
 
         uint32_t hna_net_curr = 0;
 
-        assertion(-600004, (on != self ||
-                op == TLV_OP_CUSTOM_NIIT6TO4_ADD || op == TLV_OP_CUSTOM_NIIT6TO4_DEL ||
-                op == TLV_OP_CUSTOM_NIIT4TO6_ADD || op == TLV_OP_CUSTOM_NIIT4TO6_DEL));
+        assertion(-600004, (on != self));
 
 
         if (AF_CFG != family) {
@@ -636,32 +629,16 @@ int process_description_tlv_hna(struct rx_frame_iterator *it)
 
                 } else if (op >= TLV_OP_CUSTOM_MIN) {
 
-                        dbgf_all(DBGT_INFO, "configure_niit... op=%d  global_id=%s blocked=%d",
+                        dbgf_all(DBGT_INFO, "configure TLV_OP_CUSTOM op=%d  global_id=%s blocked=%d",
                                 op, globalIdAsString(&on->global_id), on->blocked);
 
                         if (!on->blocked  && !(flags & DESC_MSG_HNA_FLAG_NO_ROUTE)) {
                                 //ASSERTION(-501314, (avl_find(&global_uhna_tree, &key)));
 
-                                if (op == TLV_OP_CUSTOM_NIIT6TO4_ADD) {
-                                        if (hna_configure_niit6to4)
-                                                (*hna_configure_niit6to4)(ADD, &key);
-                                } else if (op == TLV_OP_CUSTOM_NIIT6TO4_DEL) {
-                                        if (hna_configure_niit6to4)
-                                                (*hna_configure_niit6to4)(DEL, &key);
-                                } else if (op == TLV_OP_CUSTOM_NIIT4TO6_ADD) {
-                                        if (hna_configure_niit4to6)
-                                                (*hna_configure_niit4to6)(ADD, &key);
-                                } else if (op == TLV_OP_CUSTOM_NIIT4TO6_DEL) {
-                                        if (hna_configure_niit4to6)
-                                                (*hna_configure_niit4to6)(DEL, &key);
-                                } else if (op == TLV_OP_CUSTOM_HNA_ROUTE_DEL) {
-                                        if (hna_configure_niit4to6)
-                                                (*hna_configure_niit4to6)(DEL, &key);
+                                if (op == TLV_OP_CUSTOM_HNA_ROUTE_DEL) {
                                         configure_route(DEL, on, &key);
                                 } else if (op == TLV_OP_CUSTOM_HNA_ROUTE_ADD) {
                                         configure_route(ADD, on, &key);
-                                        if (hna_configure_niit4to6)
-                                                (*hna_configure_niit4to6)(ADD, &key);
                                 } else {
                                         assertion(-501315, (NO));
                                 }

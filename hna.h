@@ -35,23 +35,11 @@
 #define ARG_IP_METRIC      "ipMetric"
 
 
-//#define DEF_NIIT_PREFIX   { { { 0,0,0,0,0,0,0,0,0,0,0xFF,0xFF,0,0,0,0 } } }
-//#define DEF_NIIT_4TO6_DEV "niit4to6"
-//#define DEF_NIIT_6TO4_DEV "niit6to4"
-
 #define TLV_OP_CUSTOM_HNA_MIN       (TLV_OP_CUSTOM_MIN + 0)
 #define TLV_OP_CUSTOM_TUN6_GET_SHA  (TLV_OP_CUSTOM_MIN + 0)
 #define TLV_OP_CUSTOM_HNA_ROUTE_ADD (TLV_OP_CUSTOM_MIN + 1)
 #define TLV_OP_CUSTOM_HNA_ROUTE_DEL (TLV_OP_CUSTOM_MIN + 2)
 #define TLV_OP_CUSTOM_HNA_MAX       (TLV_OP_CUSTOM_MIN + 2)
-
-#define TLV_OP_CUSTOM_NIIT4TO6_ADD  (TLV_OP_CUSTOM_HNA_MAX + 1)
-#define TLV_OP_CUSTOM_NIIT4TO6_DEL  (TLV_OP_CUSTOM_HNA_MAX + 2)
-#define TLV_OP_CUSTOM_NIIT6TO4_ADD  (TLV_OP_CUSTOM_HNA_MAX + 3)
-#define TLV_OP_CUSTOM_NIIT6TO4_DEL  (TLV_OP_CUSTOM_HNA_MAX + 4)
-
-extern IDM_T (*hna_configure_niit4to6) (IDM_T del, struct net_key *key);
-extern IDM_T (*hna_configure_niit6to4) (IDM_T del, struct net_key *key);
 
 //extern struct net_key tun4_address;
 //extern struct net_key tun6_address;
