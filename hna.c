@@ -603,17 +603,21 @@ int process_description_tlv_hna(struct rx_frame_iterator *it)
                         // check if node announces the same key twice:
                         uint32_t i;
                         for (i = 0; i < hna_net_curr; i++) {
-                                if (!memcmp(&hna_net_keys[i], &key, sizeof (key))) {
-                                        dbgf_sys(DBGT_ERR, "global_id=%s %s=%s blocked due to duplicate announcement",
-                                                globalIdAsString(&on->global_id), ARG_UHNA, netAsStr(&key));
-                                        return TLV_RX_DATA_BLOCKED;
+				if (is_ip_net_equal(&(hna_net_keys[i].ip), &key.ip, XMIN(hna_net_keys[i].mask, key.mask), AF_CFG)) {
+//                                if (!memcmp(&hna_net_keys[i], &key, sizeof (key))) {
+                                        dbgf_sys(DBGT_ERR, "global_id=%s FAILURE due to overlapping hnas %s %s",
+                                                globalIdAsString(&on->global_id), netAsStr(&hna_net_keys[i]), netAsStr(&key));
+                                        return TLV_RX_DATA_FAILURE;
                                 }
                         }
 
-                        if (hna_net_key_elements < (i + 1))
+                        if (hna_net_key_elements < (i + 1)) {
                                 hna_net_keys = debugRealloc(hna_net_keys, (i + 1) * sizeof (key), -300398);
-                        memcpy(&hna_net_keys[i], &key, sizeof (key));
-                        hna_net_key_elements = (hna_net_curr = (i + 1));
+				hna_net_key_elements = i + 1;
+			}
+                        hna_net_keys[i] = key;
+			hna_net_curr = i + 1;
+                        
                          
 
 
