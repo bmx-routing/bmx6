@@ -277,145 +277,6 @@ enum {
 
 char *tlv_op_str(uint8_t op);
 
-/*
- * this iterator is given the beginning of a frame area (e.g. the end of the packet_header)
- * then it iterates over the frames in that area */
-struct rx_frame_iterator {
-        // MUST be initialized:
-        // remains unchanged:
-        const char *caller;
-        struct packet_buff *pb;
-        struct orig_node *on;
-        struct ctrl_node *cn;
-        uint8_t *data;
-        uint8_t *frames_in;
-        struct frame_handl *handls;
-        struct frame_handl *handl;
-        uint8_t op;
-        uint8_t process_filter;
-        uint8_t handl_max;
-        int32_t frames_length;
-
-        // MUST be initialized, updated by rx..iterate(), and consumed by handl[].rx_tlv_handler
-        int32_t frames_pos;
-        int8_t frame_type; //init to -1 !!
-
-        // set by rx..iterate(), and consumed by handl[].rx_tlv_handler
-        uint8_t is_short_header;
-        int32_t frame_data_length;
-        int32_t frame_msgs_length;
-        int32_t frame_msgs_fixed;
-        uint8_t *frame_data;
-        uint8_t *msg;
-
-        // allocated by handl[].rx_tlv_handler and freed by calling function of rx_frame_iterate() (e.g. process_description_tlvs())
-
-        // allocated and freed by function calling process_description_tlvs(), eg. process_description(), bmx(), plugins,...
-        void *custom_data;
-};
-
-
-/*
- * this iterator is given a fr_type and a set of handlers,
- * then the handlers are supposed to figure out what needs to be done.
- * finally the iterator writes ready-to-send frame_header and frame data to *fs_data */
-struct tx_frame_iterator {
-	// MUST be initialized:
-	// remains unchanged:
-	const char          *caller;
-	struct list_head    *tx_task_list;
-	struct tx_task_node *ttn;
-
-	uint8_t             *cache_data_array;
-	uint8_t             *frames_out_ptr;
-	struct frame_handl  *handls;
-	uint8_t              handl_max;
-	int32_t              frames_out_pref;
-	int32_t              frames_out_max;
-
-        // updated by fs_caller():
-	uint8_t              frame_type;
-
-	// updated by tx..iterate():
-	int32_t              frames_out_pos;
-	int32_t              frames_out_num;
-	int32_t              cache_msgs_size;
-
-//#define tx_iterator_cache_data_space( it ) (((it)->frames_out_max) - ((it)->frames_out_pos + (it)->cache_msg_pos + ((int)(sizeof (struct frame_header_long)))))
-//#define tx_iterator_cache_hdr_ptr( it ) ((it)->cache_data_array)
-//#define tx_iterator_cache_msg_ptr( it ) ((it)->cache_data_array + (it)->cache_msg_pos)
-};
-
-
-struct frame_handl {
-        uint8_t is_advertisement;              // NO link information required for tx_frame_...(), dev is enough
-	uint8_t is_destination_specific_frame; // particularly: is NO advertisement AND individual frames are created for each destination
-	uint8_t is_relevant; // if local implementation differs from received value for given frame: then local value is used.
-	                     // if set to ONE specifies: frame MUST BE processed or in case of unknown frame type:
-	                     // then whole super_frame MUST be dropped. If set to ZERO the frame can be ignored.
-	                     // if frame->is_relevant==1 and unknown and super_frame->is_relevant==1:
-	                     // then the whole super_frame MUST BE dropped as well.
-	                     // If irrelevant and unknown: then frame propagation depends on the super_frame logic.
-	                     // i.e.: * unknown packet_frames MUST BE dropped.
-	                     //       * unknown and irrelevant description_tlv_frames MUST BE propagated
-        uint8_t family;
-	uint8_t rx_requires_described_neigh;
-        uint16_t data_header_size;
-        uint16_t min_msg_size;
-        uint16_t fixed_msg_size;
-        uint16_t tx_task_interval_min;
-        int32_t *tx_iterations;
-        UMETRIC_T *tx_tp_min;
-        UMETRIC_T *tx_rp_min;
-        UMETRIC_T *rx_tp_min;
-        UMETRIC_T *rx_rp_min;
-        char *name;
-
-	int32_t (*rx_frame_handler) (struct rx_frame_iterator *); // returns: TLV_RX_DATA_code or rcvd frame_msgs_len (without data_header_size)
-	int32_t (*rx_msg_handler)   (struct rx_frame_iterator *); // returns: TLV_RX_DATA_code or rcvd frame_msg_len  (without data_header_size)
-	int32_t (*tx_frame_handler) (struct tx_frame_iterator *); // returns: TLV_TX_DATA_code or send frame_msgs_len (without data_header_size)
-	int32_t (*tx_msg_handler)   (struct tx_frame_iterator *); // returns: TLV_TX_DATA_code or send frame_msg_len  (without data_header_size)
-	
-	const struct field_format *msg_format;
-};
-
-
-static inline uint8_t * tx_iterator_cache_hdr_ptr(struct tx_frame_iterator *it)
-{
-	return it->cache_data_array;
-}
-
-static inline uint8_t * tx_iterator_cache_msg_ptr(struct tx_frame_iterator *it)
-{
-	return it->cache_data_array + it->handls[it->frame_type].data_header_size + it->cache_msgs_size;
-}
-
-static inline int32_t tx_iterator_cache_data_space_max(struct tx_frame_iterator *it)
-{
-	return it->frames_out_max - (
-		it->frames_out_pos +
-		it->handls[it->frame_type].data_header_size +
-		it->cache_msgs_size +
-		(int) sizeof(struct frame_header_long));
-}
-
-static inline int32_t tx_iterator_cache_data_space_pref(struct tx_frame_iterator *it)
-{
-	return it->frames_out_pref - (
-		it->frames_out_pos +
-		it->handls[it->frame_type].data_header_size +
-		it->cache_msgs_size +
-		(int) sizeof(struct frame_header_long));
-}
-
-static inline int32_t tx_iterator_cache_msg_space_max(struct tx_frame_iterator *it)
-{
-        if (it->handls[it->frame_type].min_msg_size && it->handls[it->frame_type].fixed_msg_size)
-                return tx_iterator_cache_data_space_max(it) / it->handls[it->frame_type].min_msg_size;
-        else
-                return 0;
-}
-
 
 
 
@@ -722,6 +583,151 @@ struct description_cache_node {
         TIME_T timestamp;
         struct description *description;
 };
+
+
+
+/*
+ * this iterator is given the beginning of a frame area (e.g. the end of the packet_header)
+ * then it iterates over the frames in that area */
+struct rx_frame_iterator {
+        // MUST be initialized:
+        // remains unchanged:
+        const char *caller;
+        struct packet_buff *pb;
+        struct orig_node *on;
+        struct ctrl_node *cn;
+        uint8_t *data;
+        uint8_t *frames_in;
+        struct frame_handl *handls;
+        struct frame_handl *handl;
+        uint8_t op;
+        uint8_t process_filter;
+        uint8_t handl_max;
+        int32_t frames_length;
+
+        // MUST be initialized, updated by rx..iterate(), and consumed by handl[].rx_tlv_handler
+        int32_t frames_pos;
+        int8_t frame_type; //init to -1 !!
+
+        // set by rx..iterate(), and consumed by handl[].rx_tlv_handler
+        uint8_t is_short_header;
+        int32_t frame_data_length;
+        int32_t frame_msgs_length;
+        int32_t frame_msgs_fixed;
+        uint8_t *frame_data;
+        uint8_t *msg;
+
+        // allocated by handl[].rx_tlv_handler and freed by calling function of rx_frame_iterate() (e.g. process_description_tlvs())
+
+        // allocated and freed by function calling process_description_tlvs(), eg. process_description(), bmx(), plugins,...
+        void *custom_data;
+};
+
+
+/*
+ * this iterator is given a fr_type and a set of handlers,
+ * then the handlers are supposed to figure out what needs to be done.
+ * finally the iterator writes ready-to-send frame_header and frame data to *fs_data */
+struct tx_frame_iterator {
+	// MUST be initialized:
+	// remains unchanged:
+	const char          *caller;
+	struct list_head    *tx_task_list;
+	struct tx_task_node *ttn;
+
+	uint8_t             *cache_data_array;
+	uint8_t             *frames_out_ptr;
+	struct frame_handl  *handls;
+	uint8_t              handl_max;
+	int32_t              frames_out_pref;
+	int32_t              frames_out_max;
+
+        // updated by fs_caller():
+	uint8_t              frame_type;
+
+	// updated by tx..iterate():
+	int32_t              frames_out_pos;
+	int32_t              frames_out_num;
+	int32_t              cache_msgs_size;
+
+//#define tx_iterator_cache_data_space( it ) (((it)->frames_out_max) - ((it)->frames_out_pos + (it)->cache_msg_pos + ((int)(sizeof (struct frame_header_long)))))
+//#define tx_iterator_cache_hdr_ptr( it ) ((it)->cache_data_array)
+//#define tx_iterator_cache_msg_ptr( it ) ((it)->cache_data_array + (it)->cache_msg_pos)
+};
+
+
+struct frame_handl {
+        uint8_t is_advertisement;              // NO link information required for tx_frame_...(), dev is enough
+	uint8_t is_destination_specific_frame; // particularly: is NO advertisement AND individual frames are created for each destination
+	uint8_t is_relevant; // if local implementation differs from received value for given frame: then local value is used.
+	                     // if set to ONE specifies: frame MUST BE processed or in case of unknown frame type:
+	                     // then whole super_frame MUST be dropped. If set to ZERO the frame can be ignored.
+	                     // if frame->is_relevant==1 and unknown and super_frame->is_relevant==1:
+	                     // then the whole super_frame MUST BE dropped as well.
+	                     // If irrelevant and unknown: then frame propagation depends on the super_frame logic.
+	                     // i.e.: * unknown packet_frames MUST BE dropped.
+	                     //       * unknown and irrelevant description_tlv_frames MUST BE propagated
+        uint8_t family;
+	uint8_t rx_requires_described_neigh;
+        uint16_t data_header_size;
+        uint16_t min_msg_size;
+        uint16_t fixed_msg_size;
+        uint16_t tx_task_interval_min;
+        int32_t *tx_iterations;
+        UMETRIC_T *tx_tp_min;
+        UMETRIC_T *tx_rp_min;
+        UMETRIC_T *rx_tp_min;
+        UMETRIC_T *rx_rp_min;
+        char *name;
+
+	int32_t (*rx_frame_handler) (struct rx_frame_iterator *); // returns: TLV_RX_DATA_code or rcvd frame_msgs_len (without data_header_size)
+	int32_t (*rx_msg_handler)   (struct rx_frame_iterator *); // returns: TLV_RX_DATA_code or rcvd frame_msg_len  (without data_header_size)
+	int32_t (*tx_frame_handler) (struct tx_frame_iterator *); // returns: TLV_TX_DATA_code or send frame_msgs_len (without data_header_size)
+	int32_t (*tx_msg_handler)   (struct tx_frame_iterator *); // returns: TLV_TX_DATA_code or send frame_msg_len  (without data_header_size)
+
+	const struct field_format *msg_format;
+};
+
+
+static inline uint8_t * tx_iterator_cache_hdr_ptr(struct tx_frame_iterator *it)
+{
+	return it->cache_data_array;
+}
+
+static inline uint8_t * tx_iterator_cache_msg_ptr(struct tx_frame_iterator *it)
+{
+	return it->cache_data_array + it->handls[it->frame_type].data_header_size + it->cache_msgs_size;
+}
+
+static inline int32_t tx_iterator_cache_data_space_max(struct tx_frame_iterator *it)
+{
+	return it->frames_out_max - (
+		it->frames_out_pos +
+		it->handls[it->frame_type].data_header_size +
+		it->cache_msgs_size +
+		(int) sizeof(struct frame_header_long));
+}
+
+static inline int32_t tx_iterator_cache_data_space_pref(struct tx_frame_iterator *it)
+{
+	return it->frames_out_pref - (
+		it->frames_out_pos +
+		it->handls[it->frame_type].data_header_size +
+		it->cache_msgs_size +
+		(int) sizeof(struct frame_header_long));
+}
+
+static inline int32_t tx_iterator_cache_msg_space_max(struct tx_frame_iterator *it)
+{
+        if (it->handls[it->frame_type].min_msg_size && it->handls[it->frame_type].fixed_msg_size)
+                return tx_iterator_cache_data_space_max(it) / it->handls[it->frame_type].min_msg_size;
+        else
+                return 0;
+}
+
+
+
+
 
 extern uint32_t ogm_aggreg_pending;
 extern IID_T myIID4me;
