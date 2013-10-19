@@ -2645,7 +2645,7 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 
                 if (f_type > it->handl_max || !(it->handls[f_type].rx_frame_handler || it->handls[f_type].rx_msg_handler)) {
 
-                        dbgf_sys(DBGT_WARN, "%s - unknown type=%d ! check for updates", it->caller, f_type);
+                        dbgf_mute(50, DBGL_SYS, DBGT_WARN, "%s - unknown type=%d ! check for updates", it->caller, f_type);
 
                         if (f_type > it->handl_max || fhs->is_relevant)
                                 return TLV_RX_DATA_FAILURE;
@@ -2683,21 +2683,18 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
                         dbgf_sys(DBGT_WARN, "%s - nonmaching length=%d for type=%s", it->caller, f_len, f_handl->name);
                         return TLV_RX_DATA_FAILURE;
 
-                } else if (f_handl->is_relevant != fhs->is_relevant) {
+                } else if (f_handl->family && f_handl->family != AF_CFG) {
 
-                        dbgf_sys(DBGT_ERR, "%s - type=%s frame_length=%d from %s, signals %s but known as %s",
+                        return f_handl->is_relevant ? TLV_RX_DATA_FAILURE : TLV_RX_DATA_IGNORED;
+                }
+
+                if (f_handl->is_relevant != fhs->is_relevant) {
+
+                        dbgf_mute(90, DBGL_CHANGES, DBGT_ERR, "%s - type=%s frame_length=%d from %s, signals %s but known as %s",
                                 it->caller, f_handl->name, f_len, pb ? pb->i.llip_str : DBG_NIL,
                                 fhs->is_relevant ? "RELEVANT" : "IRRELEVANT",
                                 f_handl->is_relevant ? "RELEVANT" : "IRRELEVANT");
-
-
-                        return fhs->is_relevant ? TLV_RX_DATA_FAILURE : TLV_RX_DATA_BLOCKED;
-
-                } else if (f_handl->family && f_handl->family != AF_CFG) {
-
-                        return fhs->is_relevant ? TLV_RX_DATA_FAILURE : TLV_RX_DATA_IGNORED;
-                }
-
+		}
 
                 if (!(it->process_filter == FRAME_TYPE_PROCESS_ALL || it->process_filter == f_type)) {
 

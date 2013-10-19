@@ -350,11 +350,12 @@ struct tx_frame_iterator {
 struct frame_handl {
         uint8_t is_advertisement;              // NO link information required for tx_frame_...(), dev is enough
 	uint8_t is_destination_specific_frame; // particularly: is NO advertisement AND individual frames are created for each destination
-	uint8_t is_relevant; // if set to ONE specifies: frame MUST BE processed or in case of unknown frame type, the
-	                     // whole super_frame MUST be dropped. If set to ZERO the frame can be ignored.
-	                     // if frame->is_relevant==1 and unknown and super_frame->is_relevant==1, then
-	                     // the whole super_frame MUST BE dropped as well.
-	                     // If irrelevant and unknown frames are rebroadcasted depends on the super_frame logic.
+	uint8_t is_relevant; // if local implementation differs from received value for given frame: then local value is used.
+	                     // if set to ONE specifies: frame MUST BE processed or in case of unknown frame type:
+	                     // then whole super_frame MUST be dropped. If set to ZERO the frame can be ignored.
+	                     // if frame->is_relevant==1 and unknown and super_frame->is_relevant==1:
+	                     // then the whole super_frame MUST BE dropped as well.
+	                     // If irrelevant and unknown: then frame propagation depends on the super_frame logic.
 	                     // i.e.: * unknown packet_frames MUST BE dropped.
 	                     //       * unknown and irrelevant description_tlv_frames MUST BE propagated
         uint8_t family;
