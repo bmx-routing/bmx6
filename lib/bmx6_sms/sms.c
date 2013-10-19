@@ -51,7 +51,7 @@ static int extensions_fd = -1;
 static int extensions_wd = -1;
 
 
-static AVL_TREE(json_sms_tree, struct json_sms, name );
+static AVL_TREE(sms_tree, struct sms_node, name );
 
 
 
@@ -66,7 +66,7 @@ void check_for_changed_sms(void *unused)
 
         struct opt_type *opt = get_option( 0, 0, ARG_SMS );
         struct opt_parent *p = NULL;
-        struct json_sms * sms = NULL;
+        struct sms_node * sms = NULL;
         struct avl_node *an = NULL;
 
         char name[MAX_JSON_SMS_NAME_LEN];
@@ -80,7 +80,7 @@ void check_for_changed_sms(void *unused)
         }
 
 
-        while ((sms = avl_iterate_item(&json_sms_tree, &an))) {
+        while ((sms = avl_iterate_item(&sms_tree, &an))) {
                 sms->stale = 1;
         }
 
@@ -109,7 +109,7 @@ void check_for_changed_sms(void *unused)
                         close(fd);
                         continue;
 
-                } else if ((sms = avl_find_item(&json_sms_tree, name)) && sms->text_len == len && !memcmp(sms->text, data, len)) {
+                } else if ((sms = avl_find_item(&sms_tree, name)) && sms->text_len == len && !memcmp(sms->text, data, len)) {
 
                         matching_sms++;
                         sms->stale = 0;
@@ -118,16 +118,16 @@ void check_for_changed_sms(void *unused)
                 } else {
 
                         if (sms) {
-                                avl_remove(&json_sms_tree, sms->name, -300378);
+                                avl_remove(&sms_tree, sms->name, -300378);
                                 debugFree(sms, -300369);
                         }
 
-                        sms = debugMallocReset(sizeof (struct json_sms) +len, -300370);
+                        sms = debugMallocReset(sizeof (struct sms_node) +len, -300370);
                         strcpy(sms->name, name);
                         sms->text_len = len;
                         sms->stale = 0;
                         memcpy(sms->text, data, len);
-                        avl_insert(&json_sms_tree, sms, -300371);
+                        avl_insert(&sms_tree, sms, -300371);
                         close(fd);
 
                         dbgf_track(DBGT_INFO, "new sms=%s size=%d! updating description..-", path_name, sms->text_len);
@@ -137,18 +137,18 @@ void check_for_changed_sms(void *unused)
         }
 
 
-        if (found_sms != matching_sms || found_sms != json_sms_tree.items) {
+        if (found_sms != matching_sms || found_sms != sms_tree.items) {
 
-                dbgf_all(DBGT_INFO, "sms found=%d matching=%d items=%d", found_sms, matching_sms, json_sms_tree.items);
+                dbgf_all(DBGT_INFO, "sms found=%d matching=%d items=%d", found_sms, matching_sms, sms_tree.items);
 
                 memset(name, 0, sizeof (name));
-                while ((sms = avl_next_item(&json_sms_tree, name))) {
+                while ((sms = avl_next_item(&sms_tree, name))) {
                         memcpy(name, sms->name, sizeof (sms->name));
                         if (sms->stale) {
                                 dbgf_track(DBGT_INFO, "removed sms=%s/%s size=%d! updating description...",
                                         smsTx_dir, sms->name, sms->text_len);
 
-                                avl_remove(&json_sms_tree, sms->name, -300373);
+                                avl_remove(&sms_tree, sms->name, -300373);
                                 debugFree(sms, -300374);
                         }
                 }
@@ -207,13 +207,13 @@ int create_description_sms(struct tx_frame_iterator *it)
 {
 
         struct avl_node *an = NULL;
-        struct json_sms *sms;
+        struct sms_node *sms;
 
         uint8_t *data = tx_iterator_cache_msg_ptr(it);
         uint16_t max_size = tx_iterator_cache_data_space_max(it);
         int pos = 0;
 
-        while ((sms = avl_iterate_item(&json_sms_tree, &an))) {
+        while ((sms = avl_iterate_item(&sms_tree, &an))) {
 
                 if (pos + sizeof (struct description_msg_sms) + sms->text_len > max_size) {
                         dbgf_sys(DBGT_ERR, "Failed adding descriptionSms=%s/%s", smsTx_dir, sms->name);
@@ -424,8 +424,8 @@ static void sms_cleanup( void )
                 task_remove(check_for_changed_sms, NULL);
         }
 
-        while (json_sms_tree.items)
-                debugFree(avl_remove_first_item(&json_sms_tree, -300381), -300382);
+        while (sms_tree.items)
+                debugFree(avl_remove_first_item(&sms_tree, -300381), -300382);
 
 
 }

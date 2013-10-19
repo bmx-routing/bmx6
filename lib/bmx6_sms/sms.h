@@ -26,7 +26,7 @@
 
 #define SMS_POLLING_INTERVAL 5000
 
-struct json_sms {
+struct sms_node {
 	char name[MAX_JSON_SMS_NAME_LEN];
         uint16_t stale;
 	uint16_t text_len;
