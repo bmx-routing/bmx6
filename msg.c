@@ -3439,7 +3439,8 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
 
         } else {
 
-                if (on->desc && on->added) {
+                if (on->added) {
+			assertion(-500000, (on->desc));
                         tlv_result = process_description_tlvs(pb, on, on->desc, TLV_OP_DEL, FRAME_TYPE_PROCESS_ALL, NULL, NULL);
                         assertion(-501364, (tlv_result == TLV_RX_DATA_DONE));
                 }
@@ -3451,10 +3452,8 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         }
 
 
-        if (on->desc) {
+        if (on->desc)
                 debugFree(on->desc, -300111);
-        }
-
         on->desc = desc;
         desc = NULL;
 
@@ -3464,12 +3463,12 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         assertion(-500970, (on->dhn->on == on));
         assertion(-500309, (on->dhn == avl_find_item(&dhash_tree, &on->dhn->dhash)));
         assertion(-500310, (on == avl_find_item(&orig_tree, &on->desc->globalId)));
+	assertion(-500000, (on->desc));
 
-        if (on->desc)
-                cb_plugin_hooks(PLUGIN_CB_DESCRIPTION_CREATED, on);
-
+	cb_plugin_hooks(PLUGIN_CB_DESCRIPTION_CREATED, on);
 
         return on->dhn;
+
 
 process_desc0_error:
 

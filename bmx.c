@@ -667,8 +667,8 @@ void free_orig_node(struct orig_node *on)
 
         purge_orig_router(on, NULL, NO);
 
-        if (on->desc && on->added) {
-                //cb_plugin_hooks(PLUGIN_CB_DESCRIPTION_DESTROY, on);
+        if (on->added) {
+		assertion(-500000, (on->desc));
                 process_description_tlvs(NULL, on, on->desc, TLV_OP_DEL, FRAME_TYPE_PROCESS_ALL, NULL, NULL);
         } else {
                 cache_desc_tlv_hashes(TLV_OP_DEL, on, 0, BMX_DSC_TLV_MAX, NULL, 0);
