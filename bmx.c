@@ -54,6 +54,8 @@ static int32_t ogm_purge_to = DEF_OGM_PURGE_TO;
 
 int32_t my_tx_interval = DEF_TX_INTERVAL;
 
+uint16_t my_desc_capabilities = MY_DESC_CAPABILITIES;
+
 int32_t my_ogm_interval = DEF_OGM_INTERVAL;   /* orginator message interval in miliseconds */
 
 static int32_t link_purge_to = DEF_LINK_PURGE_TO;
@@ -1020,7 +1022,7 @@ void rx_packet( struct packet_buff *pb )
 	// we acceppt longer packets than specified by pos->size to allow padding for equal packet sizes
         if (    pb->i.total_length < (int) (sizeof (struct packet_header) + sizeof (struct frame_header_long)) ||
                 pkt_length < (int) (sizeof (struct packet_header) + sizeof (struct frame_header_long)) ||
-                hdr->bmx_version != COMPATIBILITY_VERSION ||
+                ((hdr->comp_version < (COMPATIBILITY_VERSION - 1)) || (hdr->comp_version > (COMPATIBILITY_VERSION + 1))) ||
                 pkt_length > pb->i.total_length || pkt_length > MAX_UDPD_SIZE ||
                 pb->i.link_key.dev_idx < DEVADV_IDX_MIN || pb->i.link_key.local_id == LOCAL_ID_INVALID ) {
 
@@ -1084,7 +1086,7 @@ void rx_packet( struct packet_buff *pb )
 
 
         dbgf_all(DBGT_INFO, "version=%i, reserved=%X, size=%i IID=%d rcvd udp_len=%d via NB %s %s %s",
-                hdr->bmx_version, hdr->reserved, pkt_length, pb->i.transmittersIID,
+                hdr->comp_version, hdr->capabilities, pkt_length, pb->i.transmittersIID,
                 pb->i.total_length, pb->i.llip_str, iif->label_cfg.str, pb->i.unicast ? "UNICAST" : "BRC");
 
 
@@ -1105,8 +1107,8 @@ process_packet_error:
         dbgf_sys(DBGT_WARN,
                 "Drop (remaining) packet: rcvd problematic packet via NB=%s dev=%s "
                 "(version=%i, local_id=%X dev_idx=0x%X, reserved=0x%X, pkt_size=%i), udp_len=%d my_version=%d, max_udpd_size=%d",
-                pb->i.llip_str, iif->label_cfg.str, hdr->bmx_version,
-                ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx, hdr->reserved, pkt_length, pb->i.total_length,
+                pb->i.llip_str, iif->label_cfg.str, hdr->comp_version,
+                ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx, hdr->capabilities, pkt_length, pb->i.total_length,
                 COMPATIBILITY_VERSION, MAX_UDPD_SIZE);
 
         blacklist_neighbor(pb);

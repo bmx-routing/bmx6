@@ -450,18 +450,18 @@ struct msg_dhash_adv { // 2 + X bytes
 struct description { // 68 bytes
 	GLOBAL_ID_T globalId; // 32 bytes name + 20 bytes pkid
 
-        uint16_t revision; // 2 bytes //TODO: increase to 4 bytes
-	uint16_t capabilities; // 2 bytes
+	uint16_t revision;     // 2 bytes
 
-        DESC_SQN_T descSqn;   // 2 bytes
+        DESC_SQN_T descSqn;    // 4 bytes
 
-	OGM_SQN_T ogmSqnMin;  // 2 bytes
-	OGM_SQN_T ogmSqnRange;// 2 bytes
+	OGM_SQN_T ogmSqnMin;   // 2 bytes
+	OGM_SQN_T ogmSqnRange; // 2 bytes
 
-	uint16_t txInterval;  // 2 bytes
+	uint16_t capabilities; // 2 bytes // TODOCV18: dont use before!
 
-	uint8_t reservedTtl;  // 1 byte
-        uint8_t reserved;     // 1 byte
+	uint8_t comp_version;  // 1 bytes
+//	uint8_t reservedTtl;   // 1 byte
+        uint8_t reserved;      // 1 byte
 
         uint16_t extensionLen;// 2 bytes
 //	uint8_t extensionData[];
@@ -487,12 +487,11 @@ struct msg_description_adv { // IPv6: >= 92 bytes
 {FIELD_TYPE_UINT,             -1, (8*sizeof(IID_T)),       0, FIELD_RELEVANCE_MEDI, "transmitterIid4x"}, \
 {FIELD_TYPE_GLOBAL_ID,        -1, (8*sizeof(GLOBAL_ID_T)), 1, FIELD_RELEVANCE_HIGH, "globalId"},  \
 {FIELD_TYPE_HEX,              -1, 16,                      0, FIELD_RELEVANCE_MEDI, "revision" }, \
-{FIELD_TYPE_HEX,              -1, 16,                      0, FIELD_RELEVANCE_MEDI, "capabilities" }, \
-{FIELD_TYPE_UINT,             -1, 16,                      0, FIELD_RELEVANCE_MEDI, "descSqn" }, \
+{FIELD_TYPE_UINT,             -1, 32,                      0, FIELD_RELEVANCE_MEDI, "descSqn" }, \
 {FIELD_TYPE_UINT,             -1, (8*sizeof(OGM_SQN_T)),   0, FIELD_RELEVANCE_MEDI, "ogmSqnMin" }, \
 {FIELD_TYPE_UINT,             -1, (8*sizeof(OGM_SQN_T)),   0, FIELD_RELEVANCE_MEDI, ARG_OGM_SQN_RANGE }, \
-{FIELD_TYPE_UINT,             -1, 16,                      0, FIELD_RELEVANCE_HIGH, ARG_TX_INTERVAL }, \
-{FIELD_TYPE_UINT,             -1, 8,                       1, FIELD_RELEVANCE_LOW,  "reservedTtl" }, \
+{FIELD_TYPE_HEX,              -1, 16,                      0, FIELD_RELEVANCE_MEDI, "capabilities" }, \
+{FIELD_TYPE_UINT,             -1, 8,                       1, FIELD_RELEVANCE_LOW,  "comp_version" }, \
 {FIELD_TYPE_UINT,             -1, 8,                       1, FIELD_RELEVANCE_LOW,  "reserved" }, \
 {FIELD_TYPE_STRING_SIZE,      -1, 16,                      0, FIELD_RELEVANCE_LOW,  "extensionLen" }, \
 {FIELD_TYPE_STRING_BINARY,    -1, 0,                       1, FIELD_RELEVANCE_LOW,  "extensionData" }, \

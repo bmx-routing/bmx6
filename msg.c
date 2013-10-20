@@ -276,8 +276,9 @@ IDM_T process_description_tlvs(struct packet_buff *pb, struct orig_node *on, str
                 .frames_length = dsc_tlvs_len, .custom_data = custom
         };
 
-        dbgf_track(DBGT_INFO, "op=%s id=%s dsc_sqn=%d size=%d ",
-                tlv_op_str(op), globalIdAsString(&desc->globalId), ntohs(desc->descSqn), dsc_tlvs_len);
+        dbgf_track(DBGT_INFO, "op=%s id=%s cv=%d revision=%d dsc_sqn=%X size=%d",
+                tlv_op_str(op), globalIdAsString(&desc->globalId), desc->comp_version, ntohs(desc->revision),
+		ntohl(desc->descSqn), dsc_tlvs_len);
 
 
         while ((tlv_result = rx_frame_iterate(&it)) > TLV_RX_DATA_DONE);
@@ -3248,7 +3249,7 @@ void tx_packet(void *devp)
 
                         memset(packet_hdr, 0, sizeof (struct packet_header));
 
-                        packet_hdr->bmx_version = COMPATIBILITY_VERSION;
+                        packet_hdr->comp_version = COMPATIBILITY_VERSION;
                         packet_hdr->pkt_length = htons(pb.i.total_length);
                         packet_hdr->transmitterIID = htons(myIID4me);
                         packet_hdr->link_adv_sqn = htons(my_link_adv_sqn);
@@ -3360,8 +3361,8 @@ IDM_T validate_description(struct description *desc)
 
         if (
                 //validate_param(desc->reservedTtl, MIN_TTL, MAX_TTL, ARG_TTL) || // may be reused for other purpose (eg as capabilities)
+                validate_param(desc->comp_version, 0/*(COMPATIBILITY_VERSION-1)*/, (COMPATIBILITY_VERSION+1), "compatibilty version") || //TODOCV18: check exactly !!
                 validate_param(ntohs(desc->ogmSqnRange), _MIN_OGM_SQN_RANGE, _MAX_OGM_SQN_RANGE, ARG_OGM_SQN_RANGE) ||
-                validate_param(ntohs(desc->txInterval), MIN_TX_INTERVAL, MAX_TX_INTERVAL, ARG_TX_INTERVAL) ||
                 0
                 ) {
 
@@ -3384,29 +3385,21 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         if ( validate_description( desc ) != SUCCESS )
                 goto process_desc0_error;
 
+	DESC_SQN_T descSqn = ntohl(desc->descSqn);
 
         if ((on = avl_find_item(&orig_tree, &desc->globalId))) {
 
-                dbgf_track(DBGT_INFO, "descSQN=%d (old_sqn=%d) from id=%s via_dev=%s via_ip=%s",
-                        ntohs(desc->descSqn), on->descSqn, globalIdAsString(&desc->globalId), pb->i.iif->label_cfg.str, pb->i.llip_str);
+                dbgf_track(DBGT_INFO, "descSQN=%d (old_sqn=%d) from id=%s cv=%d via_dev=%s via_ip=%s",
+                        descSqn, on->descSqn, globalIdAsString(&desc->globalId),
+			desc->comp_version, pb->i.iif->label_cfg.str, pb->i.llip_str);
 
                 assertion(-500383, (on->dhn));
 
                 if (((TIME_T) (bmx_time - on->dhn->referred_by_me_timestamp)) < (TIME_T) dad_to) {
 
-                        if (((DESC_SQN_MASK)&(ntohs(desc->descSqn) - (on->descSqn + 1))) > DEF_DESCRIPTION_DAD_RANGE) {
+                        if (((DESC_SQN_MASK_OLD)&(descSqn - (on->descSqn + 1))) > DEF_DESCRIPTION_DAD_RANGE) {
 
-                                dbgf_sys(DBGT_ERR, "DAD-Alert: new dsc_sqn %d not > old %d + 1",
-                                        ntohs(desc->descSqn), on->descSqn);
-
-                                goto process_desc0_ignore;
-                        }
-
-                        if (ntohs(desc->descSqn) == ((DESC_SQN_T) (on->descSqn + 1)) &&
-                                UXX_LT(OGM_SQN_MASK, ntohs(desc->ogmSqnMin), (on->ogmSqn_rangeMin + _MAX_OGM_SQN_RANGE))) {
-
-                                dbgf_sys(DBGT_ERR, "DAD-Alert: new ogm_sqn_min %d not > old %d + %d",
-                                        ntohs(desc->ogmSqnMin), on->ogmSqn_rangeMin, _MAX_OGM_SQN_RANGE);
+                                dbgf_sys(DBGT_ERR, "DAD-Alert: new dsc_sqn %d not > old %d + 1",descSqn, on->descSqn);
 
                                 goto process_desc0_ignore;
                         }
@@ -3418,7 +3411,7 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         }
 
         on->updated_timestamp = bmx_time;
-        on->descSqn = ntohs(desc->descSqn);
+        on->descSqn = descSqn;
         on->ogmSqn_rangeMin = ntohs(desc->ogmSqnMin);
         on->ogmSqn_rangeSize = ntohs(desc->ogmSqnRange);
         on->ogmSqn_maxRcvd = (OGM_SQN_MASK & (on->ogmSqn_rangeMin - OGM_SQN_STEP));
@@ -3524,7 +3517,7 @@ void update_my_description_adv(void)
 
         dsc->ogmSqnMin = htons(self->ogmSqn_rangeMin);
         dsc->ogmSqnRange = htons(self->ogmSqn_rangeSize);
-        dsc->txInterval = htons(my_tx_interval);
+        dsc->capabilities = htons(my_desc_capabilities);
 
         uint32_t rev_u32;
         char rev_string[9];
@@ -3533,8 +3526,8 @@ void update_my_description_adv(void)
         sscanf(rev_string, "%4X", &rev_u32);
 
         dsc->revision = htons(rev_u32);
-        dsc->descSqn = htons(++(self->descSqn));
-        dsc->reservedTtl = my_ttl;
+        dsc->comp_version = COMPATIBILITY_VERSION;
+        dsc->descSqn = htonl(++(self->descSqn));
 
         // add all tlv options:
         

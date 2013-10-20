@@ -238,7 +238,9 @@ struct float_u8 {
 typedef struct float_u8 FMETRIC_U8_T;
 
 
-
+#define MY_DESC_CAPABILITIES_CV16 0x0200 //capability flag for compatibility with CV16 txInterval field
+#define MY_DESC_CAPABILITIES (MY_DESC_CAPABILITIES_CV16 | 0)
+extern uint16_t my_desc_capabilities;
 
 #define MIN_TX_INTERVAL 35
 #define MAX_TX_INTERVAL 10000  // < U16_MAX due to metricalgo->ogm_interval field
@@ -390,9 +392,10 @@ typedef uint16_t HELLO_SQN_T;
 
 
 // descriptions 
-typedef uint16_t DESC_SQN_T;
-#define DESC_SQN_BIT_SIZE   (16)
-#define DESC_SQN_MASK     ((1<<DESC_SQN_BIT_SIZE)-1)
+typedef uint32_t DESC_SQN_T;
+#define DESC_SQN_BIT_SIZE   (8*sizeof(DESC_SQN_T))
+#define DESC_SQN_MASK       ((DESC_SQN_T)-1)
+#define DESC_SQN_MASK_OLD   ((uint16_t)-1)     //TODOCV18: replace with DESC_SQN_MASK
 #define DESC_SQN_MAX        DESC_SQN_MASK
 
 #define DEF_DESCRIPTION_DAD_RANGE 8192
@@ -416,8 +419,8 @@ typedef uint8_t  FRAME_TYPE_T;
 
 struct packet_header // 17 bytes
 {
-	uint8_t    bmx_version;      //  8
-	uint8_t    reserved;         //  8  reserved
+	uint8_t    comp_version;     //  8
+	uint8_t    capabilities;     //  8  reserved
 	uint16_t   pkt_length; 	     // 16 the relevant data size in bytes (including the bmx_header)
 
 	IID_T      transmitterIID;   // 16 IID of transmitter node
