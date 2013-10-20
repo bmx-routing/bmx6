@@ -342,8 +342,6 @@ typedef uint8_t OGM_DEST_T;
 
 
 typedef uint32_t PKT_SQN_T;
-#define PKT_SQN_DAD_RANGE 1000
-#define PKT_SQN_DAD_TOLERANCE 100
 #define PKT_SQN_MAX ((PKT_SQN_T)-1)
 
 
@@ -427,8 +425,8 @@ struct packet_header // 17 bytes
 
 	LINKADV_SQN_T link_adv_sqn;  // 16 used for processing: link_adv, lq_adv, rp_adv, ogm_adv, ogm_ack
 
+	//TODOCV18: merge pkt_sqn and local_id into single uint64_t local_id
 	PKT_SQN_T  pkt_sqn;          // 32
-
 	LOCAL_ID_T local_id;         // 32
 	
 	DEVADV_IDX_T   dev_idx;      //  8
@@ -806,7 +804,6 @@ struct local_node {
 	struct link_dev_node *best_lndev;
 	struct neigh_node *neigh; // to be set when confirmed, use carefully
 
-	PKT_SQN_T packet_sqn;
 	TIME_T packet_time;
 	LINKADV_SQN_T packet_link_sqn_ref; //indicating the maximum existing link_adv_sqn
 
@@ -1053,7 +1050,6 @@ struct packet_buff {
 		//filled in by rx_packet()
 		uint32_t rx_counter;
 		IID_T transmittersIID;
-		PKT_SQN_T pkt_sqn;
 		LINKADV_SQN_T link_sqn;
 
 		struct link_node_key link_key;

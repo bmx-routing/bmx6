@@ -146,7 +146,7 @@
 
 #define FRAME_TYPE_RSVD0        0
 
-#define FRAME_TYPE_PROBLEM_ADV  2  // yet only used to indicate dev_id collisions
+#define FRAME_TYPE_PROBLEM_ADV  2  // yet only used to indicate local/link_id collisions
 
 #define FRAME_TYPE_TEST_ADV     3  // just for testing zero-message rx/tx_frame_iterator()
 

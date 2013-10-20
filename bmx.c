@@ -802,28 +802,6 @@ struct link_node *get_link_node(struct packet_buff *pb)
 
         if (local) {
 
-                if ((((PKT_SQN_T) (pb->i.pkt_sqn + PKT_SQN_DAD_TOLERANCE - local->packet_sqn)) > (PKT_SQN_DAD_RANGE + PKT_SQN_DAD_TOLERANCE))) {
-
-                        if (((TIME_T) (bmx_time - local->packet_time) < (TIME_T) PKT_SQN_DAD_RANGE * my_tx_interval)) {
-
-                                dbgf_sys(DBGT_WARN, "DAD-Alert NB=%s local_id=%X dev=%s pkt_sqn=%d pkt_sqn_max=%d dad_range=%d dad_to=%d",
-                                        pb->i.llip_str, ntohl(pb->i.link_key.local_id), pb->i.iif->label_cfg.str, pb->i.pkt_sqn, local->packet_sqn,
-                                        PKT_SQN_DAD_RANGE, PKT_SQN_DAD_RANGE * my_tx_interval);
-
-                                schedule_tx_task(&pb->i.iif->dummy_lndev, FRAME_TYPE_PROBLEM_ADV, sizeof (struct msg_problem_adv),
-                                        FRAME_TYPE_PROBLEM_CODE_DUP_LINK_ID, local->local_id, 0, pb->i.transmittersIID);
-
-                                // its safer to purge the old one, otherwise we might end up with hundrets
-                                //return NULL;
-                        }
-
-                        purge_local_node(local);
-
-                        assertion(-500983, (!avl_find_item(&local_tree, &pb->i.link_key.local_id)));
-
-                        return NULL;
-                }
-
                 if ((((LINKADV_SQN_T) (pb->i.link_sqn - local->packet_link_sqn_ref)) > LINKADV_SQN_DAD_RANGE)) {
 
                         dbgf_sys(DBGT_ERR, "DAD-Alert NB=%s local_id=%X dev=%s link_sqn=%d link_sqn_max=%d dad_range=%d dad_to=%d",
@@ -895,7 +873,6 @@ struct link_node *get_link_node(struct packet_buff *pb)
                 avl_insert(&local_tree, local, -300337);
         }
 
-        local->packet_sqn = pb->i.pkt_sqn;
         local->packet_link_sqn_ref = pb->i.link_sqn;
         local->packet_time = bmx_time;
 
@@ -993,7 +970,6 @@ void rx_packet( struct packet_buff *pb )
         struct packet_header *hdr = &pb->packet.header;
         uint16_t pkt_length = ntohs(hdr->pkt_length);
         pb->i.transmittersIID = ntohs(hdr->transmitterIID);
-        pb->i.pkt_sqn = ntohl(hdr->pkt_sqn);
         pb->i.link_sqn = ntohs(hdr->link_adv_sqn);
 
         pb->i.link_key.local_id = hdr->local_id;

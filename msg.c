@@ -1843,6 +1843,7 @@ int32_t tx_frame_problem_adv(struct tx_frame_iterator *it)
         dbgf_all(DBGT_INFO, "FRAME_TYPE_PROBLEM_CODE=%d dev_id=0x%X", ttn->task.u16, ttn->task.u32);
 
         if (ttn->task.u16 == FRAME_TYPE_PROBLEM_CODE_DUP_LINK_ID) {
+		//TODOCV18: purge:
                 
                 adv->reserved = 0;
                 adv->code = ttn->task.u16;
@@ -1868,6 +1869,7 @@ int32_t rx_frame_problem_adv(struct rx_frame_iterator *it)
         struct msg_problem_adv *adv = (struct msg_problem_adv *) it->frame_data;
 
         if (adv->code == FRAME_TYPE_PROBLEM_CODE_DUP_LINK_ID) {
+		//TODOCV18: purge:
 
                 if (it->frame_data_length != sizeof (struct msg_problem_adv)) {
 
@@ -3253,7 +3255,7 @@ void tx_packet(void *devp)
                         packet_hdr->pkt_length = htons(pb.i.total_length);
                         packet_hdr->transmitterIID = htons(myIID4me);
                         packet_hdr->link_adv_sqn = htons(my_link_adv_sqn);
-                        packet_hdr->pkt_sqn = htonl(++my_packet_sqn);
+                        packet_hdr->pkt_sqn = htonl(++my_packet_sqn); //TODOCV18: remove
                         packet_hdr->local_id = my_local_id;
                         packet_hdr->dev_idx = dev->llip_key.idx;
 
