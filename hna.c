@@ -1791,15 +1791,12 @@ int process_description_tlv_tun6_adv(struct rx_frame_iterator *it)
 
         } else if (it->op == TLV_OP_NEW) {
 
-                new_tun6_advs_changed = NO;
+                new_tun6_advs_changed = (it->on->added ? NO : YES);
 
-                if( !is_ip_set(&it->on->primary_ip) ) {
-
-                        if (terminate_tun_out(it->on, NULL, NULL))
-                                eval_tun_bit_tree(NULL);
-
-                        return it->frame_msgs_length;
-                }
+                if (!new_tun6_advs_changed) {
+			if( !is_ip_set(&it->on->primary_ip) )
+				new_tun6_advs_changed = YES;
+		}
 
                 if (!new_tun6_advs_changed) {
                         struct tun_out_key key = set_tun_adv_key(it->on, 0);
@@ -1812,40 +1809,38 @@ int process_description_tlv_tun6_adv(struct rx_frame_iterator *it)
                                         break;
                                 }
                         }
+
+			if ( key.tun6Id != it->frame_msgs_length / it->handl->min_msg_size )
+				new_tun6_advs_changed = YES;
                 }
 
                 
                 if (!new_tun6_advs_changed) {
                         uint8_t t;
-                        uint8_t tlv_types[] = {
-                                BMX_DSC_TLV_TUN6_ADV
-                                ,BMX_DSC_TLV_TUN4IN6_INGRESS_ADV
-                                ,BMX_DSC_TLV_TUN6IN6_INGRESS_ADV
-                                ,BMX_DSC_TLV_TUN4IN6_SRC_ADV
-                                ,BMX_DSC_TLV_TUN6IN6_SRC_ADV
-/*
-                                ,BMX_DSC_TLV_TUN4IN6_NET_ADV
-                                ,BMX_DSC_TLV_TUN6IN6_NET_ADV
-*/
+                        uint8_t tlv_types[] = { BMX_DSC_TLV_TUN6_ADV
+			,BMX_DSC_TLV_TUN4IN6_INGRESS_ADV ,BMX_DSC_TLV_TUN6IN6_INGRESS_ADV
+			,BMX_DSC_TLV_TUN4IN6_SRC_ADV, BMX_DSC_TLV_TUN6IN6_SRC_ADV
+//                      ,BMX_DSC_TLV_TUN4IN6_NET_ADV, BMX_DSC_TLV_TUN6IN6_NET_ADV
                         };
+
                         for (t = 0; t < sizeof (tlv_types); t++) {
 
-                                struct desc_tlv_hash_node * thn;
-
-                                if ((thn = avl_find_item(&it->on->desc_tlv_hash_tree, &tlv_types[t])) && thn->test_changed) {
-                                        new_tun6_advs_changed = YES;
-                                        break;
-                                }
+				if ( desc_frame_changed(it, tlv_types[t]) ) {
+					new_tun6_advs_changed = YES;
+					break;
+				}
                         }
                 }
 
 
-                if (!new_tun6_advs_changed) {
+                if (!new_tun6_advs_changed)
                         return it->frame_msgs_length;
-                } else {
-                        if (terminate_tun_out(it->on, NULL, NULL))
-                                eval_tun_bit_tree(NULL);
-                }
+
+		if (terminate_tun_out(it->on, NULL, NULL))
+			eval_tun_bit_tree(NULL);
+
+		if ( !is_ip_set(&it->on->primary_ip) )
+			return it->frame_msgs_length;
         }
 
 
@@ -2175,10 +2170,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
 
         if (it->op == TLV_OP_NEW) {
 
-                struct desc_tlv_hash_node *thn = avl_find_item(&it->on->desc_tlv_hash_tree, &it->frame_type);
-                assertion(-501388, (thn));
-
-                if (!new_tun6_advs_changed && !thn->prev_changed)
+		if ( !new_tun6_advs_changed && !desc_frame_changed( it, it->frame_type ) )
                         return it->frame_msgs_length;
         }
 

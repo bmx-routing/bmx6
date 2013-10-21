@@ -672,8 +672,6 @@ void free_orig_node(struct orig_node *on)
         if (on->added) {
 		assertion(-500000, (on->desc));
                 process_description_tlvs(NULL, on, on->desc, TLV_OP_DEL, FRAME_TYPE_PROCESS_ALL, NULL, NULL);
-        } else {
-                cache_desc_tlv_hashes(TLV_OP_DEL, on, 0, BMX_DSC_TLV_MAX, NULL, 0);
         }
 
         if ( on->dhn ) {
@@ -2163,7 +2161,6 @@ struct orig_node *init_orig_node(GLOBAL_ID_T *id)
         on->global_id = *id;
 
         AVL_INIT_TREE(on->rt_tree, struct router_node, local_key);
-        AVL_INIT_TREE(on->desc_tlv_hash_tree, struct desc_tlv_hash_node, tlv_type);
 
         avl_insert(&orig_tree, on, -300148);
 

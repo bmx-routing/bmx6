@@ -753,7 +753,8 @@ void update_my_link_adv(uint32_t changes);
 struct dhash_node * process_description(struct packet_buff *pb, struct description *desc, struct description_hash *dhash);
 IDM_T process_description_tlvs(struct packet_buff *pb, struct orig_node *on, struct description *desc, uint8_t op,
         uint8_t filter, void *custom_data, struct ctrl_node *cn);
-void cache_desc_tlv_hashes(uint8_t op, struct orig_node *on, int8_t t_start, int8_t t, uint8_t *t_data, int32_t t_data_len);
+int32_t get_desc_frame_data(uint8_t **frame_data, uint8_t *desc_ext_data, int32_t desc_ext_len, uint8_t frame_type);
+IDM_T desc_frame_changed(  struct rx_frame_iterator *it, uint8_t f_type );
 void purge_tx_task_list(struct list_head *tx_tasks_list, struct link_node *only_link, struct dev_node *only_dev);
 
 void tx_packets( void *unused );

@@ -919,15 +919,6 @@ struct neigh_node {
 extern struct avl_tree orig_tree;
 //extern struct avl_tree blocked_tree;
 
-struct desc_tlv_hash_node {
-        SHA1_T prev_hash;
-        SHA1_T curr_hash;
-        SHA1_T test_hash;
-        uint8_t tlv_type;
-        uint8_t test_changed;
-        uint8_t prev_changed;
-};
-
 
 struct orig_node {
 	// filled in by validate_new_link_desc0():
@@ -936,7 +927,6 @@ struct orig_node {
 
 	struct dhash_node *dhn;
 	struct description *desc;
-	struct avl_tree desc_tlv_hash_tree;
 
 	TIME_T updated_timestamp; // last time this on's desc was succesfully updated
 

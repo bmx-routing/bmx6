@@ -276,9 +276,9 @@ IDM_T process_description_tlvs(struct packet_buff *pb, struct orig_node *on, str
                 .frames_length = dsc_tlvs_len, .custom_data = custom
         };
 
-        dbgf_track(DBGT_INFO, "op=%s id=%s cv=%d revision=%d dsc_sqn=%X size=%d",
+        dbgf_track(DBGT_INFO, "op=%s id=%s cv=%d revision=%d dsc_sqn=%X size=%d, filter=%d",
                 tlv_op_str(op), globalIdAsString(&desc->globalId), desc->comp_version, ntohs(desc->revision),
-		ntohl(desc->descSqn), dsc_tlvs_len);
+		ntohl(desc->descSqn), dsc_tlvs_len, filter);
 
 
         while ((tlv_result = rx_frame_iterate(&it)) > TLV_RX_DATA_DONE);
@@ -2498,79 +2498,93 @@ int32_t rx_msg_hello_adv(struct rx_frame_iterator *it)
         return sizeof (struct msg_hello_adv);
 }
 
+int32_t get_desc_frame_data(uint8_t **frame_data, uint8_t *desc_ext_data, int32_t desc_ext_len, uint8_t frame_type) {
 
-void cache_desc_tlv_hashes(uint8_t op, struct orig_node *on, int8_t t_start, int8_t t, uint8_t *t_data, int32_t t_data_len)
-{
-        assertion(-501356, ((op == TLV_OP_DEL || op == TLV_OP_TEST || op == TLV_OP_NEW)));
-        assertion(-501357, (t_start <= t));
+//	assertion(-500000, (frame_type != BMX_DSC_TLV_REF_ADV));
 
-        int8_t hn_type;
+	int32_t frame_data_len = 0;
 
-	dbgf_track(DBGT_INFO, "op=%s on=%s t_start=%d t_end=%d t_data_len=%d data=%s",
-                tlv_op_str(op), on?globalIdAsString(&on->global_id):"???", t_start, t, t_data_len,
-		t_data&&t_data_len?memAsHexString(t_data, t_data_len):"");
+	struct rx_frame_iterator it = {
+                .caller = __FUNCTION__, .on = NULL, .cn = NULL, .op = TLV_OP_PLUGIN_MIN,
+                .handls = description_tlv_handl, .handl_max = BMX_DSC_TLV_MAX,
+                .process_filter = FRAME_TYPE_PROCESS_NONE, .custom_data = NULL,
+                .frame_type = -1,.frames_in = desc_ext_data, .frames_length = desc_ext_len };
 
-        for (hn_type = t_start; hn_type <= t; hn_type++) {
+	int32_t tlv_result;
 
-                struct desc_tlv_hash_node * hn = avl_find_item(&on->desc_tlv_hash_tree, &hn_type);
+	if (frame_data)
+		*frame_data = NULL;
 
-		dbgf_track(DBGT_INFO, "hn_type=%d hn=%s: prev=%X curr=%X test=%X chngd=%d", hn_type, hn?"Y":"N",
-			hn?hn->prev_hash.h.u32[0]:0, hn?hn->curr_hash.h.u32[0]:0, hn?hn->test_hash.h.u32[0]:0,
-			hn?hn->test_changed:-1);
+        while ((tlv_result = rx_frame_iterate(&it)) > TLV_RX_DATA_DONE) {
 
-                if (op == TLV_OP_TEST) {
+		if ( it.frame_type == frame_type
+//			|| (it.frame_type == BMX_DSC_TLV_REF_ADV && ((struct description_hdr_ref*)(it.frame_data))->final_type == frame_type)
+			) {
 
-                        if (!hn && t_data && hn_type == t) {
-                                hn = debugMallocReset(sizeof (struct desc_tlv_hash_node), -300451);
-                                hn->tlv_type = t;
-                                avl_insert(&on->desc_tlv_hash_tree, hn, -300452);
-                        }
+			if( frame_data_len )
+				return -1;
 
-                        if (hn) {
-                                if (t_data && hn_type == t) {
-                                        ShaUpdate(&bmx_sha, (byte*) t_data, t_data_len);
-                                        ShaFinal(&bmx_sha, (byte*) & hn->test_hash);
-                                } else {
-                                        memset(&hn->test_hash, 0, sizeof (SHA1_T));
-                                }
+			if (frame_data)
+				*frame_data = it.frame_data;
 
-                                hn->test_changed = memcmp(&hn->curr_hash, &hn->test_hash, sizeof (SHA1_T)) ? 1 : 0;
-                        }
+			frame_data_len = it.frame_data_length;
+		}
+	}
 
-                } else if (op == TLV_OP_NEW) {
-
-
-                        assertion(-501358, IMPLIES(t_data && hn_type == t, hn));
-                        assertion(-501359, IMPLIES(hn && hn_type != t, !is_zero(&hn->curr_hash, sizeof (SHA1_T)) && is_zero(&hn->test_hash, sizeof (SHA1_T))));
-
-                        if (hn) {
-                                if (hn->test_changed) {
-                                        hn->prev_hash = hn->curr_hash;
-                                        hn->curr_hash = hn->test_hash;
-                                        hn->prev_changed = hn->test_changed;
-                                }
-
-                                if (hn_type != t) {
-                                        // remove otherwise forgotten tlv
-                                        int tlv_result = process_description_tlvs(NULL, on, on->desc, TLV_OP_DEL, hn_type, NULL, NULL);
-                                        assertion(-501360, (tlv_result == TLV_RX_DATA_DONE));
-                                }
-                        }
-                }
-
-                if (hn) {
-                        if (op == TLV_OP_DEL || (
-                                is_zero(&hn->test_hash, sizeof (SHA1_T)) &&
-                                is_zero(&hn->curr_hash, sizeof (SHA1_T)) &&
-                                is_zero(&hn->prev_hash, sizeof (SHA1_T))
-                                )) {
-
-                                avl_remove(&on->desc_tlv_hash_tree, &hn->tlv_type, -300453);
-                                debugFree(hn, -300454);
-                        }
-                }
-        }
+	return frame_data_len;
 }
+
+IDM_T desc_frame_changed(  struct rx_frame_iterator *it, uint8_t f_type ) {
+
+	uint8_t *fs_in_new = it->frames_in;
+	int32_t fs_len_new = it->frames_length;
+	uint8_t *fs_in_old = (((uint8_t*) it->on->desc) + sizeof (struct description));
+	int32_t fs_len_old = ntohs(it->on->desc->extensionLen);
+
+	uint8_t *fdp_old, *fdp_new;
+	
+
+	int32_t fdl_old = get_desc_frame_data( &fdp_old, fs_in_old, fs_len_old, f_type);
+
+	assertion(-500000, (fdl_old >= 0));
+
+
+	int32_t fdl_new = get_desc_frame_data( &fdp_new, fs_in_new, fs_len_new, f_type);
+
+	assertion(-500000, (fdl_new >= 0));
+
+
+	uint8_t changed = ( fdl_new != fdl_old || (fdl_new && memcmp(fdp_new, fdp_old, fdl_old)) );
+
+	dbgf_track(DBGT_INFO, "orig=%s %s type=%d (%s) old_len=%d new_len=%d",
+	           globalIdAsString(&it->on->global_id), changed ? "  CHANGED" : "UNCHANGED",
+	           f_type, it->handls[f_type].name, fdl_old, fdl_new);
+
+	if (changed)
+		return YES;
+	else
+		return NO;
+}
+
+
+STATIC_FUNC
+void process_description_tlvs_del( struct orig_node *on, uint8_t ft_start, uint8_t ft_end ) {
+
+	int8_t t;
+
+	for (t = ft_start; t <= ft_end; t++) {
+
+		int32_t df_len = get_desc_frame_data(NULL, ((uint8_t*)(on->desc)) + sizeof(struct description), ntohs(on->desc->extensionLen), t);
+
+		assertion(-500000, (df_len >= 0));
+
+		if (df_len > 0) {
+			int tlv_result = process_description_tlvs(NULL, on, on->desc, TLV_OP_DEL, t, NULL, NULL);
+			assertion(-501360, (tlv_result == TLV_RX_DATA_DONE));
+		}
+	}
+}
+
 
 int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 {
@@ -2580,13 +2594,13 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 
         dbgf_all(DBGT_INFO, "%s - frame_pos=%d frame_len=%d", it->caller, it->frames_pos, it->frames_length);
 
-        if (it->frames_pos == it->frames_length) {
+        if (it->frames_pos == it->frames_length ) {
+		
+		if ( it->on && it->on->added && it->op == TLV_OP_NEW && it->process_filter == FRAME_TYPE_PROCESS_ALL &&
+			it->frame_type < it->handl_max ) {
 
-                if (it->on && it->process_filter == FRAME_TYPE_PROCESS_ALL && it->frame_type < it->handl_max &&
-                        (it->op == TLV_OP_DEL || it->op == TLV_OP_TEST || it->op == TLV_OP_NEW)) {
-
-                        cache_desc_tlv_hashes(it->op, it->on, (it->frame_type + 1), it->handl_max, NULL, 0);
-                 }
+			process_description_tlvs_del( it->on, (it->frame_type + 1), it->handl_max );
+		}
 
                 dbgf_all(DBGT_INFO, "%s - frames_pos=%d frames_length=%d : DONE", it->caller, it->frames_pos, it->frames_length);
                 return TLV_RX_DATA_DONE;
@@ -2635,14 +2649,10 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
                 }
 
 
-                if (it->on && (it->op == TLV_OP_DEL || it->op == TLV_OP_TEST || it->op == TLV_OP_NEW)) {
+                if (it->on && it->on->added && it->op == TLV_OP_NEW && it->process_filter == FRAME_TYPE_PROCESS_ALL &&
+			it->frame_type + 1 < f_type) {
 
-			if (it->process_filter == FRAME_TYPE_PROCESS_ALL) {
-				cache_desc_tlv_hashes(it->op, it->on, (it->frame_type + 1), f_type, f_data, f_data_len);
-			} else if (it->process_filter == f_type ) {
-				dbgf_track(DBGT_WARN, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-				cache_desc_tlv_hashes(it->op, it->on, f_type, f_type, f_data, f_data_len);
-			}
+			process_description_tlvs_del( it->on, (it->frame_type + 1), (f_type - 1) );
                  }
 
 
