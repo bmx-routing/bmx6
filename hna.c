@@ -1306,15 +1306,13 @@ void configure_tun_bit(uint8_t del, struct tun_bit_node *tbn, IDM_T tdn_state)
                 rtep = &rte;
         }
 
-	int dbgl = DBGL_ALL;
+	int dbgl = DBGL_SYS;
 
 	assertion(-501490, (tsn->net.af == tnn->tunNetKey.netKey.af));
 	assertion(-501491, (tsn->net.af == tbn->tunBitKey.invRouteKey.af));
 	assertion(-501492, (tdn_state==TDN_STATE_CURRENT || tdn_state==TDN_STATE_DEDICATED || tdn_state==TDN_STATE_CATCHALL));
 
         if (del && tbn->active_tdn) {
-
-		dbgl = DBGL_CHANGES;
 
                 iproute((IP_ROUTE_TUNS + rtype), DEL, NO, &routeKey, tbn->ipTable, 0, tbn->active_tdn->ifIdx, NULL, NULL, ntohl(tbn->tunBitKey.beIpMetric), rtep);
 
@@ -1324,15 +1322,16 @@ void configure_tun_bit(uint8_t del, struct tun_bit_node *tbn, IDM_T tdn_state)
 			(tdn_state==TDN_STATE_DEDICATED && tbn->active_tdn->tunCatch_fd>0) ||
 			(tdn_state==TDN_STATE_CATCHALL && tbn->active_tdn->tunCatch_fd<=0) ) ) ) ) {
 
-		dbgl = DBGL_CHANGES;
-
 		if (tbn->active_tdn)
 			iproute((IP_ROUTE_TUNS + rtype), DEL, NO, &routeKey, tbn->ipTable, 0, tbn->active_tdn->ifIdx, NULL, NULL, ntohl(tbn->tunBitKey.beIpMetric), rtep);
 
 		tun_dev_out_add( tbn, tdn_state );
 		assertion(-501540, (tbn->active_tdn));
 		iproute((IP_ROUTE_TUNS + rtype), ADD, NO, &routeKey, tbn->ipTable, 0, tbn->active_tdn->ifIdx, NULL, NULL, ntohl(tbn->tunBitKey.beIpMetric), rtep);
-        }
+
+        } else {
+		dbgl = DBGL_ALL;
+	}
 
 	dbgf(dbgl, DBGT_INFO, "%s %s via orig %s asDfltTun=%d tbn_active=%s",
 	       del?"DEL":"ADD", netAsStr(&routeKey), globalIdAsString(&ton->tunOutKey.on->global_id),
@@ -2238,6 +2237,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
 					tnk.bmx6RouteType = adv->bmx6_route_type;
 
                                         struct tun_net_node *tnn = avl_find_item(&tun_net_tree, &tnk);
+					char *what = NULL;
 
                                         if (!tnn) {
 
@@ -2252,6 +2252,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
 
                                                 upd_tun_bit_node(ADD, NULL, tnn);
                                                 used = YES;
+						what = "NEW";
 
                                         } else if (tnn->bandwidth.val.u8 != adv->bandwidth.val.u8) {
 
@@ -2259,12 +2260,17 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
                                                 tnn->bandwidth = adv->bandwidth;
                                                 upd_tun_bit_node(ADD, NULL, tnn);
                                                 used = YES;
+						what = "CHANGED";
 
                                         } else {
 
-                                                dbgf_sys(DBGT_WARN, "network=%s found for orig=%s tun6Id=%d",
-                                                        netAsStr(&net), globalIdAsString(&tok.on->global_id), tok.tun6Id);
+						what = "OLD";
                                         }
+
+					dbgf_sys(DBGT_WARN, "%s network=%s bw=%d, found for orig=%s tun6Id=%d",
+						what, netAsStr(&net), adv->bandwidth.val.u8, globalIdAsString(&tok.on->global_id), tok.tun6Id);
+
+					assertion(-501578, (tnn->tunNetKey.ton->tunOutKey.on == tok.on));
 
                                         tnn->tlv_new_counter = tlv_new_counter;
 
