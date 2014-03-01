@@ -2267,7 +2267,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
 						what = "OLD";
                                         }
 
-					dbgf_sys(DBGT_WARN, "%s network=%s bw=%d, found for orig=%s tun6Id=%d",
+					dbgf_track(DBGT_INFO, "%s network=%s bw=%d, found for orig=%s tun6Id=%d",
 						what, netAsStr(&net), adv->bandwidth.val.u8, globalIdAsString(&tok.on->global_id), tok.tun6Id);
 
 					assertion(-501578, (tnn->tunNetKey.ton->tunOutKey.on == tok.on));
