@@ -199,12 +199,11 @@ typedef struct ifname IFNAME_T;
 #define MAX_BASE_PORT 60000
 
 
-
-#define ARG_PEDANTIC_CLEANUP "pedanticCleanup"
-#define DEF_PEDANTIC_CLEANUP  NO
-
-
-
+#define SYSCTL_IP6_FORWARD 1
+#define SYSCTL_IP4_RP_FILTER 2
+#define SYSCTL_IP4_FORWARD 1
+#define SYSCTL_IP4_SEND_REDIRECT 0
+#define SYSCTL_IP4_ACCEPT_LOCAL 1
 
 #define B64_SIZE 64
 
@@ -435,9 +434,6 @@ struct dev_node {
 	char ip_llocal_str[IPX_STR_LEN];
 	char ip_global_str[IPX_STR_LEN];
 	char ip_brc_str[IPX_STR_LEN];
-
-	int32_t ip4_rp_filter_orig;
-	int32_t ip4_send_redirects_orig;
 
 	struct sockaddr_storage llocal_unicast_addr;
 	struct sockaddr_storage tx_netwbrc_addr;
@@ -702,7 +698,7 @@ void ip_flush_rules(uint8_t family, int32_t table_macro);
 
 struct net_key bmx6AutoEUI64Ip6(ADDR_T mac, struct net_key *prefix);
 
-IDM_T check_proc_sys_net(char *file, int32_t desired, int32_t *backup);
+IDM_T check_proc_sys_net(char *file, int32_t desired);
 
 void sysctl_config(struct dev_node *dev_node);
 

@@ -146,15 +146,6 @@ static int ifevent_sk = -1;
 //static Sha ip_sha;
 
 
-
-static int32_t Pedantic_cleanup = DEF_PEDANTIC_CLEANUP;
-static int32_t if6_forward_orig = -1;
-static int32_t if4_forward_orig = -1;
-static int32_t if4_rp_filter_all_orig = -1;
-static int32_t if4_rp_filter_default_orig = -1;
-static int32_t if4_send_redirects_all_orig = -1;
-static int32_t if4_send_redirects_default_orig = -1;
-
 static void dev_check(void *kernel_ip_config_changed);
 static void (*ipexport) (int8_t del, const struct net_key *dst, uint32_t oif_idx, IPX_T *via, uint32_t metric, uint8_t distance) = NULL;
 
@@ -1362,7 +1353,7 @@ void kernel_dev_tun_del( char *name, int32_t fd ) {
 }
 
 
-int32_t kernel_dev_tun_add( char *name, int32_t *fdp, IDM_T accept_local_ipv4 )
+int32_t kernel_dev_tun_add( char *name, int32_t *fdp, IDM_T isIp4Tun )
 {
 	int32_t sock_opts;
 	int32_t ifidx;
@@ -1405,11 +1396,17 @@ int32_t kernel_dev_tun_add( char *name, int32_t *fdp, IDM_T accept_local_ipv4 )
 	if ((ifidx = kernel_get_ifidx( name )) == FAILURE)
 		goto kernel_dev_tun_add_error;
 
-	if (accept_local_ipv4) {
+
+	if (isIp4Tun) {
+
 		char filename[100];
-		int32_t dummy;
+
 		sprintf(filename,"ipv4/conf/%s/accept_local", name);
-		if (check_proc_sys_net(filename, 1, &dummy)==FAILURE)
+		if (check_proc_sys_net(filename, SYSCTL_IP4_ACCEPT_LOCAL)==FAILURE)
+			goto kernel_dev_tun_add_error;
+
+		sprintf(filename,"ipv4/conf/%s/rp_filter", name);
+		if (check_proc_sys_net(filename, SYSCTL_IP4_RP_FILTER)==FAILURE)
 			goto kernel_dev_tun_add_error;
 	}
 
@@ -1478,6 +1475,7 @@ int32_t kernel_tun_add(char *name, uint8_t proto, IPX_T *local, IPX_T *remote)
         struct ifreq req;
 	struct ip6_tnl_parm p;
 	int32_t idx;
+	char filename[100];
 
         assertion(-501527, (name && strlen(name)));
 
@@ -1501,16 +1499,28 @@ int32_t kernel_tun_add(char *name, uint8_t proto, IPX_T *local, IPX_T *remote)
         if ((ioctl(io_sock, SIOCADDTUNNEL, &req))) {
                 dbgf_sys(DBGT_ERR, "Failed adding tunnel dev=%s %s", name, strerror(errno));
                 return FAILURE;
-        }
-
-	if ( kernel_set_flags( name, 0, SIOCGIFFLAGS, SIOCSIFFLAGS, IFF_UP, 0 ) != SUCCESS ||
-		(idx = kernel_get_ifidx( name )) <= 0) {
-		IDM_T result = kernel_tun_del(name);
-		assertion(-501502, (result==SUCCESS));
-		return FAILURE;
 	}
 
+	if (kernel_set_flags(name, 0, SIOCGIFFLAGS, SIOCSIFFLAGS, IFF_UP, 0) != SUCCESS || (idx = kernel_get_ifidx(name)) <= 0)
+		goto kernel_tun_add_error;
+
+
+	sprintf(filename,"ipv4/conf/%s/accept_local", name);
+	if (check_proc_sys_net(filename, SYSCTL_IP4_ACCEPT_LOCAL)==FAILURE)
+		goto kernel_tun_add_error;
+
+	sprintf(filename,"ipv4/conf/%s/rp_filter", name);
+	if (check_proc_sys_net(filename, SYSCTL_IP4_RP_FILTER)==FAILURE)
+		goto kernel_tun_add_error;
+
 	return idx;
+
+kernel_tun_add_error: {
+
+	int result = kernel_tun_del(name);
+	assertion(-501502, (result==SUCCESS));
+	return FAILURE;
+}
 }
 
 
@@ -1886,7 +1896,7 @@ IDM_T iproute(uint8_t cmd, int8_t del, uint8_t quiet, const struct net_key *dst,
 
 
 
-IDM_T check_proc_sys_net(char *file, int32_t desired, int32_t *backup)
+IDM_T check_proc_sys_net(char *file, int32_t desired)
 {
 	TRACE_FUNCTION_CALL;
         FILE *f;
@@ -1907,22 +1917,6 @@ IDM_T check_proc_sys_net(char *file, int32_t desired, int32_t *backup)
 
 	fclose(f);
 
-	if ( backup )
-		*backup = state;
-
-	// other routing protocols are probably not able to handle this therefore
-	// it is probably better to leave the routing configuration operational as it is!
-	if ( !backup  &&  !Pedantic_cleanup   &&  state != desired ) {
-
-		dbgf_mute( 50, DBGL_SYS, DBGT_INFO,
-		          "NOT restoring %s to NOT mess up other routing protocols. "
-		          "Use --%s=1 to enforce proper cleanup",
-		          file, ARG_PEDANTIC_CLEANUP );
-
-		return FAILURE;
-	}
-
-
 	if ( state != desired ) {
 
 		dbgf_sys(DBGT_INFO, "changing %s from %d to %d", filename, state, desired );
@@ -1933,118 +1927,46 @@ IDM_T check_proc_sys_net(char *file, int32_t desired, int32_t *backup)
 			return FAILURE;
 		}
 
-		fprintf(f, "%d", desired?1:0 );
+		fprintf(f, "%d", desired );
 		fclose(f);
 	}
 	return SUCCESS;
 }
 
-void sysctl_restore(struct dev_node *dev)
-{
-        TRACE_FUNCTION_CALL;
-
-        if (dev && AF_CFG == AF_INET) {
-
-		char filename[100];
-
-		if (dev->ip4_rp_filter_orig > -1) {
-			sprintf( filename, "ipv4/conf/%s/rp_filter", dev->name_phy_cfg.str);
-			check_proc_sys_net( filename, dev->ip4_rp_filter_orig, NULL );
-		}
-
-		dev->ip4_rp_filter_orig = -1;
-
-
-		if (dev->ip4_send_redirects_orig > -1) {
-			sprintf( filename, "ipv4/conf/%s/send_redirects", dev->name_phy_cfg.str);
-			check_proc_sys_net( filename, dev->ip4_send_redirects_orig, NULL );
-		}
-
-		dev->ip4_send_redirects_orig = -1;
-
-        } else if (dev && AF_CFG == AF_INET6) {
-
-                // nothing to restore
-        }
-        
-        if (!dev) {
-
-		if( if4_rp_filter_all_orig != -1 )
-			check_proc_sys_net( "ipv4/conf/all/rp_filter", if4_rp_filter_all_orig, NULL );
-
-		if4_rp_filter_all_orig = -1;
-
-		if( if4_rp_filter_default_orig != -1 )
-			check_proc_sys_net( "ipv4/conf/default/rp_filter", if4_rp_filter_default_orig,  NULL );
-
-		if4_rp_filter_default_orig = -1;
-
-		if( if4_send_redirects_all_orig != -1 )
-			check_proc_sys_net( "ipv4/conf/all/send_redirects", if4_send_redirects_all_orig, NULL );
-
-		if4_send_redirects_all_orig = -1;
-
-		if( if4_send_redirects_default_orig != -1 )
-			check_proc_sys_net( "ipv4/conf/default/send_redirects", if4_send_redirects_default_orig, NULL );
-
-		if4_send_redirects_default_orig = -1;
-
-		if( if4_forward_orig != -1 )
-			check_proc_sys_net( "ipv4/ip_forward", if4_forward_orig, NULL );
-
-		if4_forward_orig = -1;
-
-
-                if (if6_forward_orig != -1)
-                        check_proc_sys_net("ipv6/conf/all/forwarding", if6_forward_orig, NULL);
-
-                if6_forward_orig = -1;
-
-	}
-}
 
 // TODO: check for further traps: http://lwn.net/Articles/45386/
 void sysctl_config( struct dev_node *dev )
 {
         TRACE_FUNCTION_CALL;
 
-        static TIME_T ipv4_timestamp = -1;
-        static TIME_T ipv6_timestamp = -1;
+        static TIME_T checkstamp = -1;
         char filename[100];
 
         if (!(dev->active && dev->if_llocal_addr && dev->if_llocal_addr->iln->flags && IFF_UP))
                 return;
 
 
-        if (dev && AF_CFG == AF_INET) {
+	if (checkstamp != bmx_time) {
 
-		sprintf( filename, "ipv4/conf/%s/rp_filter", dev->name_phy_cfg.str);
-		check_proc_sys_net( filename, 0, &dev->ip4_rp_filter_orig );
+		check_proc_sys_net("ipv6/conf/all/forwarding", SYSCTL_IP6_FORWARD);
 
-		sprintf( filename, "ipv4/conf/%s/send_redirects", dev->name_phy_cfg.str);
-		check_proc_sys_net( filename, 0, &dev->ip4_send_redirects_orig );
+		check_proc_sys_net("ipv4/ip_forward", SYSCTL_IP4_FORWARD);
 
-                if (ipv4_timestamp != bmx_time) {
+		check_proc_sys_net("ipv4/conf/all/rp_filter", SYSCTL_IP4_RP_FILTER);
+		check_proc_sys_net("ipv4/conf/default/rp_filter", SYSCTL_IP4_RP_FILTER);
+		check_proc_sys_net("ipv4/conf/all/send_redirects", SYSCTL_IP4_SEND_REDIRECT);
+		check_proc_sys_net("ipv4/conf/default/send_redirects", SYSCTL_IP4_SEND_REDIRECT);
 
-                        check_proc_sys_net("ipv4/conf/all/rp_filter", 0, &if4_rp_filter_all_orig);
-                        check_proc_sys_net("ipv4/conf/default/rp_filter", 0, &if4_rp_filter_default_orig);
-                        check_proc_sys_net("ipv4/conf/all/send_redirects", 0, &if4_send_redirects_all_orig);
-                        check_proc_sys_net("ipv4/conf/default/send_redirects", 0, &if4_send_redirects_default_orig);
-                        check_proc_sys_net("ipv4/ip_forward", 1, &if4_forward_orig);
-
-                        ipv4_timestamp = bmx_time;
-                }
-
-        } else if (dev && AF_CFG == AF_INET6) {
+		checkstamp = bmx_time;
+	}
 
 
-                if (ipv6_timestamp != bmx_time) {
-
-                        check_proc_sys_net("ipv6/conf/all/forwarding", 1, &if6_forward_orig);
-
-                        ipv6_timestamp = bmx_time;
-                }
-        }
+	if (dev) {
+		sprintf(filename, "ipv4/conf/%s/rp_filter", dev->name_phy_cfg.str);
+		check_proc_sys_net(filename, SYSCTL_IP4_RP_FILTER);
+		sprintf(filename, "ipv4/conf/%s/send_redirects", dev->name_phy_cfg.str); 
+		check_proc_sys_net(filename, SYSCTL_IP4_SEND_REDIRECT);
+	}
 }
 
 
@@ -2209,8 +2131,6 @@ void dev_deactivate( struct dev_node *dev )
                 task_remove(tx_packets, NULL); //TODO: remove_task() should be reentrant save if called by task_next()!!
 
 
-
-	sysctl_restore ( dev );
 
 	change_selects();
 
@@ -3842,10 +3762,6 @@ static struct opt_type ip_options[]=
 			ARG_VALUE_FORM,	HLP_DEV_BITRATE_MIN},
 
 
-	{ODI,0,ARG_PEDANTIC_CLEANUP,	  0, 9,0,A_PS1,A_ADM,A_DYI,A_CFA,A_ANY,	&Pedantic_cleanup,0,		1,		DEF_PEDANTIC_CLEANUP,0,0,
-			ARG_VALUE_FORM,	"disable/enable pedantic cleanup of system configuration (like ip_forward,..) \n"
-			"	at program termination. Its generally safer to keep this disabled to not mess up \n"
-			"	with other routing protocols"}
 
 };
 
@@ -3951,8 +3867,6 @@ void cleanup_ip(void)
 
         kernel_get_if_config_post(YES,0);
 
-
-        sysctl_restore(NULL);
 
 
         while (dev_name_tree.items) {
