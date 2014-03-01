@@ -255,6 +255,7 @@ struct avl_node *avl_rotate_double(struct avl_node *root, int dir)
 
 void avl_insert(struct avl_tree *tree, void *node, int32_t tag)
 {
+	ASSERTION(-500000, !avl_find_item(tree, AVL_ITEM_KEY(tree, node)));
 
 	struct avl_node *new = NULL;
 
@@ -351,6 +352,7 @@ void avl_insert(struct avl_tree *tree, void *node, int32_t tag)
 	assertion(-500000, (!new->left  || avl_next(tree, AVL_ITEM_KEY(tree, new->left->item))==new));
 	assertion(-500000, (!new->right || avl_next(tree, AVL_ITEM_KEY(tree, new->item))==new->right));
 #endif
+	ASSERTION(-500000, avl_find_item(tree, AVL_ITEM_KEY(tree, node)));
         return;
 }
 
