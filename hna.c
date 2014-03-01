@@ -2934,7 +2934,7 @@ int32_t opt_tun_in_dev(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
                 if (strlen(patch->val) >= NETWORK_NAME_LEN - strlen(tun_name_prefix.str) ||
                         validate_name_string(patch->val, strlen(patch->val) + 1, NULL) != SUCCESS) {
 
-                        dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid name: %s", patch->val, tun_name_prefix.str);
+                        dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid name: %s %s", patch->val, tun_name_prefix.str);
 
                         return FAILURE;
                 }
