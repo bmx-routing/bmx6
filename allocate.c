@@ -19,13 +19,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-
-#ifdef DEBUG_MALLOC
-
 #include <string.h>
 #include <syslog.h>
 
 #include "bmx.h"
+
+#ifdef DEBUG_MALLOC
 
 #define MAGIC_NUMBER_HEADER 0xB2B2B2B2
 #define MAGIC_NUMBER_TRAILOR 0xB2
@@ -201,10 +200,12 @@ void *_debugMalloc(uint32_t length, int32_t tag, uint8_t reset)
         if (!length)
                 return NULL;
 
-	if (reset)
-		memory = calloc(1, length + sizeof(struct chunkHeader) + sizeof(MAGIC_TRAILER_T));
-	else
+	if (reset) {
 		memory = malloc(length + sizeof(struct chunkHeader) + sizeof(MAGIC_TRAILER_T));
+		memset(memory, 0, length + sizeof(struct chunkHeader) + sizeof(MAGIC_TRAILER_T));
+	} else {
+		memory = malloc(length + sizeof(struct chunkHeader) + sizeof(MAGIC_TRAILER_T));
+	}
 
 	if (memory == NULL)
 	{
@@ -327,7 +328,8 @@ void _debugFree(void *memoryParameter, int tag)
 
 #endif //#ifdef MEMORY_USAGE
 
-	free(chunkHeader);
+	if (!terminating)
+		free(chunkHeader);
 
 
 }
@@ -340,7 +342,9 @@ void * _malloc( size_t length ) {
 }
 
 void * _calloc( size_t length ) {
-	return calloc( 1, length );
+	void *mem = malloc( length );
+	memset( mem, 0, length);
+	return mem;
 }
 
 void * _realloc( void *mem, size_t length ) {
@@ -348,7 +352,8 @@ void * _realloc( void *mem, size_t length ) {
 }
 
 void _free( void *mem ) {
-	free( mem );
+	if (!terminating)
+		free( mem );
 }
 
 
