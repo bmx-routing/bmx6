@@ -1267,8 +1267,9 @@ void update_my_dev_adv(void)
 
                 struct dev_node *dev;
 
-                for (an = NULL; (dev = avl_iterate_item(&dev_ip_tree, &an));)
-                        schedule_tx_task(&dev->dummy_lndev, FRAME_TYPE_DEV_ADV, SCHEDULE_UNKNOWN_MSGS_SIZE, 0, 0, 0, 0);
+		for (an = NULL; (dev = avl_iterate_item(&dev_ip_tree, &an));) {
+//			schedule_tx_task(&dev->dummy_lndev, FRAME_TYPE_DEV_ADV, SCHEDULE_UNKNOWN_MSGS_SIZE, 0, 0, 0, 0);
+		}
 
         }
 
@@ -1304,8 +1305,9 @@ int32_t rx_msg_dev_req( struct rx_frame_iterator *it)
         TRACE_FUNCTION_CALL;
         struct msg_dev_req* req = ((struct msg_dev_req*) it->msg);
 
-        if (req->destination_local_id == my_local_id)
-                schedule_tx_task(&it->pb->i.iif->dummy_lndev, FRAME_TYPE_DEV_ADV, SCHEDULE_UNKNOWN_MSGS_SIZE, 0, 0, 0, 0);
+	if (req->destination_local_id == my_local_id) {
+//		schedule_tx_task(&it->pb->i.iif->dummy_lndev, FRAME_TYPE_DEV_ADV, SCHEDULE_UNKNOWN_MSGS_SIZE, 0, 0, 0, 0);
+	}
 
         return sizeof (struct msg_dev_req);
 }
