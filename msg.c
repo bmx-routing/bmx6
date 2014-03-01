@@ -2637,7 +2637,7 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 			if (it->process_filter == FRAME_TYPE_PROCESS_ALL) {
 				cache_desc_tlv_hashes(it->op, it->on, (it->frame_type + 1), f_type, f_data, f_data_len);
 			} else if (it->process_filter == f_type ) {
-				dbgf_track(DBGT_WARN, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n")
+				dbgf_track(DBGT_WARN, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
 				cache_desc_tlv_hashes(it->op, it->on, f_type, f_type, f_data, f_data_len);
 			}
                  }
