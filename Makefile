@@ -43,7 +43,7 @@
 # CFLAGS += -DDEBUG_ALL
 # CFLAGS += -DTRAFFIC_DUMP
 # CFLAGS += -DDEBUG_DUMP
-# CFLAGS += -DDEBUG_MALLOC
+CFLAGS += -DDEBUG_MALLOC
 # CFLAGS += -DMEMORY_USAGE
 
 # experimental or advanced defines (please dont touch):
