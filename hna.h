@@ -71,7 +71,7 @@ extern struct avl_tree tun_in_tree;
 
 #define ARG_TUN_OUT_TIMEOUT "tunOutTimeout"
 #define MIN_TUN_OUT_TO 0
-#define MAX_TUN_OUT_TO 3600000
+#define MAX_TUN_OUT_TO REGISTER_TASK_TIMEOUT_MAX
 #define DEF_TUN_OUT_TO 60000
 #define DEF_TUN_OUT_PERSIST 1
 
