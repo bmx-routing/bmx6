@@ -17,6 +17,8 @@
  * 02110-1301, USA
  */
 
+#include <sys/time.h>
+#include <time.h>
 
 #include <stdint.h>
 #include <sys/types.h>
@@ -32,6 +34,18 @@
  * TODO: partly move this to system.h
  * dont touch this for compatibility reasons:
  */
+
+/* Android has these under a different name since the NDK target android-8:
+ *
+ * glibc defines dprintf(int, const char*, ...), which is poorly named
+ * and likely to conflict with locally defined debugging printfs
+ * fdprintf is a better name, and some programs that use fdprintf use a
+ * #define fdprintf dprintf for compatibility
+ */
+#ifdef __ANDROID__
+#define dprintf fdprintf
+#define vdprintf vfdprintf
+#endif
 
 #define BMX_BRANCH "BMX6"
 #define BRANCH_VERSION "0.1-alpha" //put exactly one distinct word inside the string like "0.3-pre-alpha" or "0.3-rc1" or "0.3"

@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <sys/types.h>
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include <linux/if.h>
 
