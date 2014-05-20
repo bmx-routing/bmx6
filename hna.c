@@ -156,7 +156,7 @@ IDM_T configure_route(IDM_T del, struct orig_node *on, struct net_key *key)
         // update network routes:
         if (del) {
 
-                return iproute(IP_ROUTE_HNA, DEL, NO, key, RT_TABLE_HNA, 0, 0, NULL, NULL, DEF_IP_METRIC, NULL);
+                return iproute(IP_ROUTE_HNA, DEL, NO, key, BMX_TABLE_HNA, 0, 0, NULL, NULL, DEF_IP_METRIC, NULL);
 
         } else {
 
@@ -166,7 +166,7 @@ IDM_T configure_route(IDM_T del, struct orig_node *on, struct net_key *key)
                 ASSERTION(-500239, (avl_find(&link_dev_tree, &(lndev->key))));
                 assertion(-500579, (lndev->key.dev->if_llocal_addr));
 
-                return iproute(IP_ROUTE_HNA, ADD, NO, key, RT_TABLE_HNA, 0,
+                return iproute(IP_ROUTE_HNA, ADD, NO, key, BMX_TABLE_HNA, 0,
                         lndev->key.dev->if_llocal_addr->ifa.ifa_index, &(lndev->key.link->link_ip),
                         (key->af == AF_INET ? (&(self->primary_ip)) : NULL), DEF_IP_METRIC, NULL);
 

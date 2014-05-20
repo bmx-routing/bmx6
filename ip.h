@@ -163,11 +163,11 @@ typedef struct ifname IFNAME_T;
 #define MAX_IP_RULE_TUN U16_MAX //64000
 #define DEF_IP_RULE_TUN 32766
 
-#define RT_TABLE_MAX   -1
-//#define RT_TABLE_HOSTS -1
-#define RT_TABLE_HNA  -1
-#define RT_TABLE_TUN  -2
-#define RT_TABLE_MIN   -2
+#define BMX_TABLE_MAX   -1
+//#define BMX_TABLE_HOSTS -1
+#define BMX_TABLE_HNA  -1
+#define BMX_TABLE_TUN  -2
+#define BMX_TABLE_MIN   -2
 
 //#define ARG_IP_TABLE_HOST "tableHosts"
 //#define DEF_IP_TABLE_HOST 60 //avoid conflicts with bmxd and others

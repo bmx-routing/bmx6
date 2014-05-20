@@ -314,7 +314,7 @@ uint32_t prio_macro_to_prio(int32_t prio_macro)
 STATIC_FUNC
 uint32_t table_macro_to_table(int32_t table_macro)
 {
-        assertion(-501101, (IMPLIES(table_macro<0, (table_macro >= RT_TABLE_MIN && table_macro <= RT_TABLE_MAX))));
+        assertion(-501101, (IMPLIES(table_macro<0, (table_macro >= BMX_TABLE_MIN && table_macro <= BMX_TABLE_MAX))));
 
         if (policy_routing == POLICY_RT_DISABLED)
                 return 0;
@@ -322,10 +322,10 @@ uint32_t table_macro_to_table(int32_t table_macro)
 	else if (table_macro>=0)
 		return table_macro;
 
-	else if ( table_macro == RT_TABLE_HNA )
+	else if ( table_macro == BMX_TABLE_HNA )
 		return ip_table_hna_cfg;
 
-	else if ( table_macro == RT_TABLE_TUN )
+	else if ( table_macro == BMX_TABLE_TUN )
 		return ip_table_tun_cfg;
 
 	return 0;
@@ -2667,7 +2667,7 @@ int update_interface_rules(void)
                         ip_netmask_validate(&throw.ip, throw.mask, throw.af, YES);
 
 			//TODO: Fix (set oif_idx=0) as soon as this becomes mainline: http://permalink.gmane.org/gmane.linux.network/242277
-                        iproute(IP_THROW_MY_NET, ADD, NO, &throw, RT_TABLE_HNA, 0, (throw.af == AF_INET6 ? iln->index : 0), 0, 0, 0, NULL);
+                        iproute(IP_THROW_MY_NET, ADD, NO, &throw, BMX_TABLE_HNA, 0, (throw.af == AF_INET6 ? iln->index : 0), 0, 0, 0, NULL);
                         //iproute(IP_THROW_MY_NET, ADD, NO, &throw, RT_TABLE_TUN, 0, (throw.af == AF_INET6 ? iln->index : 0), 0, 0, 0, NULL);
 
                 }
@@ -2684,8 +2684,8 @@ int update_interface_rules(void)
                 IPX_T throw6 = ip4ToX(throw_node->addr);
 
                 configure_route(&throw6, AF_INET, throw_node->netmask, 0, 0, 0, 0, RT_TABLE_HOSTS, RTN_THROW, ADD, IP_THROW_MY_NET);
-                configure_route(&throw6, AF_INET, throw_node->netmask, 0, 0, 0, 0, RT_TABLE_HNA, RTN_THROW, ADD, IP_THROW_MY_NET);
-                configure_route(&throw6, AF_INET, throw_node->netmask, 0, 0, 0, 0, RT_TABLE_TUN, RTN_THROW, ADD, IP_THROW_MY_NET);
+                configure_route(&throw6, AF_INET, throw_node->netmask, 0, 0, 0, 0, BMX_TABLE_HNA, RTN_THROW, ADD, IP_THROW_MY_NET);
+                configure_route(&throw6, AF_INET, throw_node->netmask, 0, 0, 0, 0, BMX_TABLE_TUN, RTN_THROW, ADD, IP_THROW_MY_NET);
 
         }
 #endif
@@ -3084,7 +3084,7 @@ IDM_T is_policy_rt_supported(void)
         static uint8_t tested_family = 0;
         struct net_key net = ZERO_NETCFG_KEY;
 	uint32_t prio = prio_macro_to_prio(RT_PRIO_HNA);
-        uint32_t table = table_macro_to_table(RT_TABLE_HNA);
+        uint32_t table = table_macro_to_table(BMX_TABLE_HNA);
 
         if (net.af == tested_family) {
                 assertion(-501132, (tested_policy_rt != POLICY_RT_UNSET));
@@ -3219,18 +3219,18 @@ int32_t opt_ip_version(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 
 		// add rule for hosts and announced interfaces and networks
 
-		ip_flush_routes(AF_INET, RT_TABLE_HNA);
-		ip_flush_rules(AF_INET, RT_TABLE_HNA);
+		ip_flush_routes(AF_INET, BMX_TABLE_HNA);
+		ip_flush_rules(AF_INET, BMX_TABLE_HNA);
 
-		iproute(IP_RULE_DEFAULT, ADD, NO, &ZERO_NET4_KEY, RT_TABLE_HNA, RT_PRIO_HNA, 0, 0, 0, 0, NULL);
+		iproute(IP_RULE_DEFAULT, ADD, NO, &ZERO_NET4_KEY, BMX_TABLE_HNA, RT_PRIO_HNA, 0, 0, 0, 0, NULL);
 		//iproute(IP_RULE_DEFAULT, ADD, NO, &ZERO_NET4_KEY, RT_TABLE_TUN, RT_PRIO_TUNS, 0, 0, 0, 0, NULL);
 
 		if (AF_CFG == AF_INET6) {
 
-			ip_flush_routes(AF_INET6, RT_TABLE_HNA);
-			ip_flush_rules(AF_INET6, RT_TABLE_HNA);
+			ip_flush_routes(AF_INET6, BMX_TABLE_HNA);
+			ip_flush_rules(AF_INET6, BMX_TABLE_HNA);
 
-			iproute(IP_RULE_DEFAULT, ADD, NO, &ZERO_NET6_KEY, RT_TABLE_HNA, RT_PRIO_HNA, 0, 0, 0, 0, NULL);
+			iproute(IP_RULE_DEFAULT, ADD, NO, &ZERO_NET6_KEY, BMX_TABLE_HNA, RT_PRIO_HNA, 0, 0, 0, 0, NULL);
 			//iproute(IP_RULE_DEFAULT, ADD, NO, &ZERO_NET6_KEY, RT_TABLE_TUN, RT_PRIO_TUNS, 0, 0, 0, 0, NULL);
 		}
 
@@ -3851,18 +3851,18 @@ void cleanup_ip(void)
 	ip_flush_tracked( IP_ROUTE_FLUSH );
 
 	// flush all routes in this bmx6 tables (there should be NOTHING!):
-	ip_flush_routes(AF_CFG, RT_TABLE_HNA);
+	ip_flush_routes(AF_CFG, BMX_TABLE_HNA);
 	if (AF_CFG == AF_INET6)
-		ip_flush_routes(AF_INET, RT_TABLE_HNA);
+		ip_flush_routes(AF_INET, BMX_TABLE_HNA);
 
 	// flush default routes installed by bmx6:
 	ip_flush_tracked( IP_RULE_FLUSH );
 
 
 	// flush all rules pointing to bmx6 tables (there should be NOTHING!):
-	ip_flush_rules(AF_CFG, RT_TABLE_HNA);
+	ip_flush_rules(AF_CFG, BMX_TABLE_HNA);
 	if (AF_CFG == AF_INET6)
-		ip_flush_rules(AF_INET, RT_TABLE_HNA);
+		ip_flush_rules(AF_INET, BMX_TABLE_HNA);
 
 
         kernel_get_if_config_post(YES,0);
