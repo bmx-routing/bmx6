@@ -346,7 +346,7 @@ loop4Event:
 				errno=0;
 				pb.i.total_length = recvfrom( pb.i.iif->rx_mcast_sock, pb.packet.data,
 				                             sizeof(pb.packet.data) - 1, 0,
-				                             (struct sockaddr *)&pb.i.addr, &addr_len );
+				                             (struct sockaddr *)&pb.i.addr, (socklen_t*)&addr_len );
 				
 				if ( pb.i.total_length < 0  &&  ( errno == EWOULDBLOCK || errno == EAGAIN ) ) {
 
@@ -372,7 +372,7 @@ loop4Event:
 				errno=0;
 				pb.i.total_length = recvfrom( pb.i.iif->rx_fullbrc_sock, pb.packet.data,
 				                             sizeof(pb.packet.data) - 1, 0,
-				                             (struct sockaddr *)&pb.i.addr, &addr_len );
+				                             (struct sockaddr *)&pb.i.addr, (socklen_t*)&addr_len );
 				
 				if ( pb.i.total_length < 0  &&  ( errno == EWOULDBLOCK || errno == EAGAIN ) ) {
 
