@@ -1,4 +1,5 @@
-GIT_REV := $(shell ( [ "$(REVISION_VERSION)" ] && echo "$(REVISION_VERSION)" ) || ( [ -d .git ] && git --no-pager log -n 1 --oneline|cut -d " " -f 1 ) || echo 0)
+GIT_REV ?= $(shell [ -r .git ] && git --no-pager log -n 1 --oneline | cut -d " " -f 1 || echo 0)
+
 CFLAGS += -pedantic -Wall -W -Wno-unused-parameter -Os -g3 -std=gnu99 -DGIT_REV=\"$(GIT_REV)\"
 #-DHAVE_CONFIG_H
 
