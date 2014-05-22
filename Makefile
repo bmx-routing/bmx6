@@ -24,7 +24,6 @@ libs:	all
 	$(MAKE)  -C lib all CORE_CFLAGS='$(CFLAGS)'
 
 
-
 $(BINARY_NAME):	$(OBJS) Makefile
 	$(CC)  $(OBJS) -o $@  $(LDFLAGS) $(EXTRA_LDFLAGS)
 
@@ -36,7 +35,7 @@ $(BINARY_NAME):	$(OBJS) Makefile
 
 
 strip:	all
-	strip $(BINARY_NAME) 
+	strip $(BINARY_NAME)
 
 strip_libs: all libs
 	$(MAKE) -C lib strip
@@ -47,7 +46,6 @@ install:	all
 
 install_libs:   all
 	$(MAKE) -C lib install CORE_CFLAGS='$(CFLAGS)'
-
 
 	
 clean:
