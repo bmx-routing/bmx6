@@ -500,13 +500,13 @@ idea can be straight translated to IPv6).
 * The default route announcements from two well known GWs (with hostname pepe and paula) should be strictly preferred over unknown GWs.
 * So, if available, move them to new table (with lower priority than main and higher priority than used for the backup tunnel rule configured above)
 <pre>
-    bmx6 -c tunOut=v4DefaultPepe  /network=0.0.0.0/0 /maxPrefixLen=0 /name=pepe  /hysteresis=30 /tableRule=40000/140
-    bmx6 -c tunOut=v4DefaultPaula /network=0.0.0.0/0 /maxPrefixLen=0 /name=paula /hysteresis=30 /tableRule=40000/140
+    bmx6 -c tunOut=v4DefaultPepe  /network=0.0.0.0/0 /maxPrefixLen=0 /gwName=pepe  /hysteresis=30 /tableRule=40000/140
+    bmx6 -c tunOut=v4DefaultPaula /network=0.0.0.0/0 /maxPrefixLen=0 /gwName=paula /hysteresis=30 /tableRule=40000/140
 </pre>
 
 * Finally, GW Paula turned out to be more stable. Therefore I want to prefer GW Paula over Pepe:
 <pre>
-    bmx6 -c tunOut=v4DefaultPaula /network=0.0.0.0/0 /maxPrefixLen=0 /name=paula /hysteresis=30 /bonus=100
+    bmx6 -c tunOut=v4DefaultPaula /network=0.0.0.0/0 /maxPrefixLen=0 /gwName=paula /hysteresis=30 /bonus=100
 </pre>
 
 #### Gateway Nodes ####
