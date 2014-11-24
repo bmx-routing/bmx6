@@ -224,8 +224,6 @@ char *umetric_to_human(UMETRIC_T val) {
                 return "noROUTE";
         } else if (val <= UMETRIC_ROUTABLE) {
                 return "ROUTE  ";
-        } else if (val > UMETRIC_MAX) {
-                return "INFINTE";
         } else {
                 p = ((p + 1) % UMETRIC_TO_HUMAN_ARRAYS);
 

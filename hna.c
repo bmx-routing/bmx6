@@ -1412,7 +1412,7 @@ void _add_tun_bit_node(struct tun_search_node *tsna, struct tun_net_node *tnna)
                                 struct tun_bit_node *tbn = debugMalloc(sizeof ( struct tun_bit_node), -300455);
                                 memset(tbn, 0, sizeof (struct tun_bit_node));
 
-                                tbn->tunBitKey.beInvTunBitMetric = hton64(UMETRIC_MAX);
+                                tbn->tunBitKey.beInvTunBitMetric = hton64(UMETRIC_MAXX);
 				tbn->tunBitKey.beIpRule = htonl(tbkn.tsn->iprule);
                                 tbn->tunBitKey.beIpMetric = htonl(tbkn.tsn->ipmetric);
                                 tbn->tunBitKey.keyNodes = tbkn;
@@ -1506,14 +1506,12 @@ IDM_T _recalc_tun_bit_tree(void)
                 dbgf_all(DBGT_INFO, "acceptable e2eMetric=%s,", umetric_to_human(e2eMetric));
 
                 if (e2eMetric <= UMETRIC_MIN__NOT_ROUTABLE) {
-                        tbk_new.beInvTunBitMetric = hton64(UMETRIC_MAX);
+                        tbk_new.beInvTunBitMetric = hton64(UMETRIC_MAXX);
                 } else {
                         UMETRIC_T tunBitMetric = ((((e2eMetric * (tsn->rating)) / 100) *
                                 (100 + (tbn_curr->active_tdn ? tsn->hysteresis : 0))) / 100);
 
-                        assertion(-501379, (UMETRIC_MAX >= tunBitMetric));
-
-                        tbk_new.beInvTunBitMetric = hton64(UMETRIC_MAX - tunBitMetric);
+                        tbk_new.beInvTunBitMetric = hton64(UMETRIC_MAXX - tunBitMetric);
                 }
 
                 assertion(-501380, (memcmp(&tbk_new, &tbk_prev, sizeof (struct tun_bit_key))));
@@ -1604,7 +1602,7 @@ void eval_tun_bit_tree(void  *onlyIfOrderChanged)
 
 			dbgf_track(DBGT_INFO, "current: pref=%d ipmetric=%d route=%s tunMtc=%s gw=%s possible=%d dev=%s",
 				ntohl(currBKey.beIpRule), ntohl(currBKey.beIpMetric), netAsStr(&currRoute),
-				umetric_to_human(UMETRIC_MAX - ntoh64(currBKey.beInvTunBitMetric)),
+				umetric_to_human(UMETRIC_MAXX - ntoh64(currBKey.beInvTunBitMetric)),
 				globalIdAsString(&tbn_curr->tunBitKey.keyNodes.tnn->tunNetKey.ton->tunOutKey.on->global_id),
 				tbn_curr->possible, tbn_curr->active_tdn ? tbn_curr->active_tdn->nameKey.str : "---");
 
@@ -1643,8 +1641,8 @@ void eval_tun_bit_tree(void  *onlyIfOrderChanged)
 					!(crashBKey.keyNodes.tsn->allowLargerPrefixRoutesWithWorseTunMetric &&
 					  currBKey.keyNodes.tsn->breakSmallerPrefixRoutesWithBetterTunMetric) &&
 					is_ip_net_equal(&currRoute.ip, &crashRoute.ip, crashRoute.mask, af) &&
-					((UMETRIC_MAX - ntoh64(crashBKey.beInvTunBitMetric)) >
-					 (UMETRIC_MAX - ntoh64(currBKey.beInvTunBitMetric)))
+					((UMETRIC_MAXX - ntoh64(crashBKey.beInvTunBitMetric)) >
+					 (UMETRIC_MAXX - ntoh64(currBKey.beInvTunBitMetric)))
 					) {
 
 					tbn_curr->possible = NO;
@@ -1655,7 +1653,7 @@ void eval_tun_bit_tree(void  *onlyIfOrderChanged)
 
 				dbgf_track(DBGT_INFO, " crash?: pref=%d ipmetric=%d route=%s tunMtc=%s gw=%s possible=%d dev=%s ",
 				ntohl(crashBKey.beIpRule), ntohl(crashBKey.beIpMetric), netAsStr(&crashRoute),
-				umetric_to_human(UMETRIC_MAX - ntoh64(crashBKey.beInvTunBitMetric)),
+				umetric_to_human(UMETRIC_MAXX - ntoh64(crashBKey.beInvTunBitMetric)),
 				globalIdAsString(&tbn_crash->tunBitKey.keyNodes.tnn->tunNetKey.ton->tunOutKey.on->global_id),
 				tbn_crash->possible, tbn_crash->active_tdn ? tbn_crash->active_tdn->nameKey.str : "---");
 
@@ -1666,7 +1664,7 @@ void eval_tun_bit_tree(void  *onlyIfOrderChanged)
 			if (tbn_curr->possible) {
 				dbgf_track(DBGT_INFO, " adding: pref=%d ipmetric=%d route=%s tunMtc=%s gw=%s possible=%d dev=%s ",
 					ntohl(currBKey.beIpRule), ntohl(currBKey.beIpMetric), netAsStr(&currRoute),
-					umetric_to_human(UMETRIC_MAX - ntoh64(currBKey.beInvTunBitMetric)),
+					umetric_to_human(UMETRIC_MAXX - ntoh64(currBKey.beInvTunBitMetric)),
 					globalIdAsString(&tbn_curr->tunBitKey.keyNodes.tnn->tunNetKey.ton->tunOutKey.on->global_id),
 					tbn_curr->possible, tbn_curr->active_tdn ? tbn_curr->active_tdn->nameKey.str : "---");
 
@@ -2464,7 +2462,7 @@ static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
 
                                 status->tunName = (tbn->active_tdn ? tbn->active_tdn->nameKey.str : DBG_NIL);
 				status->tunIn = (tbn->active_tdn ? tbn->active_tdn->tunCatchKey.tin->nameKey.str : DBG_NIL);
-                                status->tunMtcVal = UMETRIC_MAX - ntoh64(tbn->tunBitKey.beInvTunBitMetric);
+                                status->tunMtcVal = UMETRIC_MAXX - ntoh64(tbn->tunBitKey.beInvTunBitMetric);
                                 status->tunMtc = status->tunMtcVal ? &status->tunMtcVal : NULL;
 
                         } else {
