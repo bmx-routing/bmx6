@@ -16,7 +16,7 @@
 
 include Common.mk
 
-all:	
+all:
 	$(MAKE) $(BINARY_NAME)
 	# further make targets: help, libs, build_all, strip[_libs|_all], install[_libs|_all], clean[_libs|_all]
 
@@ -47,7 +47,7 @@ install:	all
 install_libs:   all
 	$(MAKE) -C lib install CORE_CFLAGS='$(CFLAGS)'
 
-	
+
 clean:
 	rm -f $(BINARY_NAME) *.o posix/*.o linux/*.o cyassl/*.o
 
