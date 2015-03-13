@@ -563,6 +563,7 @@ IDM_T update_metric_record(struct orig_node *on, struct router_node *rt, SQN_T i
         SQN_T dbg_set;
         dbg_clr = rec->clr; // avoid unused warning
         dbg_set = rec->set; // avoid unused warning
+        IDM_T ret = FAILURE;
 
         ASSERTION(-500739, (!((~(rec->sqn_bit_mask))&(min))));
         ASSERTION(-500740, (!((~(rec->sqn_bit_mask))&(in))));
@@ -695,7 +696,6 @@ IDM_T update_metric_record(struct orig_node *on, struct router_node *rt, SQN_T i
 
 
 
-        IDM_T ret = FAILURE;
 
 update_metric_success:
         ret = SUCCESS;
