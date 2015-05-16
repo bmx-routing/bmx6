@@ -149,7 +149,7 @@ static int ifevent_sk = -1;
 static void dev_check(void *kernel_ip_config_changed);
 static void (*ipexport) (int8_t del, const struct net_key *dst, uint32_t oif_idx, IPX_T *via, uint32_t metric, uint8_t distance) = NULL;
 
-struct sys_route_dict bmx6_rt_dict[BMX6_ROUTE_MAX];
+struct sys_route_dict bmx6_rt_dict[BMX6_ROUTE_MAX_SUPP+1];
 
 
 
@@ -416,7 +416,7 @@ char *trackt2str(uint8_t cmd)
 
 	else if ( cmd > IP_ROUTE_TUNS && cmd < IP_ROUTE_MAX ) {
 
-                return bmx6_rt_dict[ (cmd - IP_ROUTE_TUNS) ].sys2Name;
+                return bmx6_rt_dict[ (cmd - IP_ROUTE_TUNS) ].sys2Name ? bmx6_rt_dict[ (cmd - IP_ROUTE_TUNS) ].sys2Name : "unknown";
 
 	} 
 

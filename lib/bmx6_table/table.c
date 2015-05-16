@@ -55,7 +55,7 @@ static AVL_TREE(redist_out_tree, struct redist_out_node, k);
 
 static LIST_SIMPEL(tunXin6_net_adv_list, struct tunXin6_net_adv_node, list, list);
 
-static struct sys_route_dict rtredist_rt_dict[BMX6_ROUTE_MAX];
+static struct sys_route_dict rtredist_rt_dict[BMX6_ROUTE_MAX_SUPP+1];
 
 
 
@@ -123,7 +123,7 @@ void get_route_list_nlhdr(struct nlmsghdr *nh, void *unused )
 			.ip=(rtm->rtm_family==AF_INET6) ? *((IPX_T *) RTA_DATA(rtap)) : ip4ToX(*((IP4_T *) RTA_DATA(rtap))) };
 
 			dbgf_sys(DBGT_INFO, "%s route=%s table=%d protocol=%s",	nh->nlmsg_type==RTM_NEWROUTE?"ADD":"DEL",
-				netAsStr(&net), rtm->rtm_table, rtredist_rt_dict[rtm->rtm_protocol].sys2Name);
+				netAsStr(&net), rtm->rtm_table, memAsHexStringSep(&rtm->rtm_protocol, 1, 0));
 
 			struct redist_in_node new = {.k = {.table = rtm->rtm_table, .inType = rtm->rtm_protocol, .net = net}};
 			struct redist_in_node *rin = avl_find_item(&redist_in_tree, &new.k);
@@ -301,6 +301,10 @@ static struct opt_type rtredist_options[]= {
 			ARG_VALUE_FORM, HLP_REDIST_AGGREGATE},
 	{ODI,ARG_REDIST,ARG_REDIST_BW,   'b',9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,  0,		 0,	         0,              0,0,            opt_redistribute,
 			ARG_VALUE_FORM,	HLP_REDIST_BW},
+	{ODI,ARG_REDIST,ARG_ROUTE_SYS,    0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,   0,              0,              BMX6_ROUTE_MAX_SUPP,0,0,        opt_redistribute,
+			ARG_VALUE_FORM, HLP_ROUTE_SYS},
+	{ODI,ARG_REDIST,ARG_ROUTE_ALL,    0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,   0,              0,              1,              0,0,            opt_redistribute,
+			ARG_VALUE_FORM, HLP_ROUTE_TYPE},
 	{ODI,ARG_REDIST,ARG_ROUTE_KERNEL, 0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,   0,              0,              1,              0,0,            opt_redistribute,
 			ARG_VALUE_FORM, HLP_ROUTE_TYPE},
 	{ODI,ARG_REDIST,ARG_ROUTE_BOOT,   0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,   0,              0,              1,              0,0,            opt_redistribute,

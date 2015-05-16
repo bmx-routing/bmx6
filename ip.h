@@ -506,7 +506,9 @@ struct dev_node {
 #define BMX6_ROUTE_OLSR       28
 #define BMX6_ROUTE_BMX6       29
 #define BMX6_ROUTE_BATMAN     30
-#define BMX6_ROUTE_MAX        31
+#define BMX6_ROUTE_MAX_KNOWN  30
+#define BMX6_ROUTE_MAX_SUPP   63
+
 
 #define ARG_ROUTE_UNSPEC      "unspecified"
 #define ARG_ROUTE_REDIRECT    "redirect"
@@ -549,14 +551,14 @@ struct sys_route_dict {
 };
 
 #define set_rt_dict( S, T, C, N, B ) do { \
-        S[ T ].sys2Name = N; \
         S[ T ].sys2Char = C; \
+        S[ T ].sys2Name = N; \
 	S[ T ].sys2bmx  = B; \
 	S[ B ].bmx2sys  = T; \
 } while (0)
 
 
-extern struct sys_route_dict bmx6_rt_dict[BMX6_ROUTE_MAX];
+extern struct sys_route_dict bmx6_rt_dict[];
 
 
 //iproute() commands:
@@ -586,7 +588,7 @@ extern struct sys_route_dict bmx6_rt_dict[BMX6_ROUTE_MAX];
 #define IP_ROUTE_HOST      36
 #define IP_ROUTE_HNA       37
 #define IP_ROUTE_TUNS      38
-#define	IP_ROUTE_MAX       (IP_ROUTE_TUNS + BMX6_ROUTE_MAX)
+#define	IP_ROUTE_MAX       (IP_ROUTE_TUNS + BMX6_ROUTE_MAX_SUPP)
 
 
 

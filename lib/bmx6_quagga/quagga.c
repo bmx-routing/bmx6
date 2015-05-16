@@ -91,7 +91,7 @@ static LIST_SIMPEL(tunXin6_net_adv_list, struct tunXin6_net_adv_node, list, list
 
 static struct zebra_cfg zcfg;
 
-static struct sys_route_dict zapi_rt_dict[BMX6_ROUTE_MAX];
+static struct sys_route_dict zapi_rt_dict[BMX6_ROUTE_MAX_SUPP+1];
 
 
 STATIC_FUNC void zsock_write(void* zpacket);
@@ -428,7 +428,7 @@ void zsock_send_redist_request(void)
         assertion(-501413, (zcfg.socket > 0));
 
         int route_type;
-        for (route_type = 0; route_type < BMX6_ROUTE_MAX; route_type++) {
+        for (route_type = 0; route_type <= BMX6_ROUTE_MAX_KNOWN; route_type++) {
 
                 uint8_t new = bit_get((uint8_t*) & zcfg.bmx6_redist_bits_new, (sizeof (zcfg.bmx6_redist_bits_new) * 8), route_type);
                 uint8_t old = bit_get((uint8_t*) & zcfg.bmx6_redist_bits_old, (sizeof (zcfg.bmx6_redist_bits_old) * 8), route_type);
@@ -881,7 +881,7 @@ static void quagga_cleanup( void )
 static int32_t quagga_init( void )
 {
 
-        assertion(-501424, (ZEBRA_ROUTE_MAX <= BMX6_ROUTE_MAX));
+        assertion(-501424, (ZEBRA_ROUTE_MAX <= BMX6_ROUTE_MAX_KNOWN));
 	memset(&zapi_rt_dict, 0, sizeof(zapi_rt_dict));
 
 	set_rt_dict(zapi_rt_dict, ZEBRA_ROUTE_SYSTEM,  'X', ARG_ROUTE_SYSTEM, BMX6_ROUTE_SYSTEM);

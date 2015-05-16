@@ -393,7 +393,7 @@ struct tun_search_node {
 
 //        struct tun_search_key tunSearchKey;
         char nameKey[NETWORK_NAME_LEN];
-	uint32_t bmx6RouteBits;
+	uint64_t bmx6RouteBits;
 	uint16_t exportDistance;
 	uint8_t exportOnly;
         struct net_key net;
@@ -521,7 +521,7 @@ struct tun_in_node {
 	struct avl_tree tun_dev_tree;
 };
 
-char* bmx6RouteBits2String(uint32_t bmx6_route_bits);
+char* bmx6RouteBits2String(uint64_t bmx6_route_bits);
 
 void set_tunXin6_net_adv_list(uint8_t del, struct list_head *adv_list);
 

@@ -35,7 +35,7 @@ void redist_dbg(int8_t dbgl, int8_t dbgt, const char *func, struct redist_in_nod
                 func, misc1, misc2, zrn->old, zrn->cnt,
                 (zrn->cnt > 1 || zrn->cnt < 0) ? "INVALID" : (zrn->old != zrn->cnt) ? "CHANGED" : "UNCHANGED",
                 netAsStr(&zrn->k.net), ipXAsStr(zrn->k.net.af, &zrn->k.via),
-                zrn->k.inType < BMX6_ROUTE_MAX ? zapi_rt_dict[zrn->k.inType].sys2Name : memAsHexStringSep(&zrn->k.inType, 1, 0),
+                zrn->k.inType < BMX6_ROUTE_MAX_KNOWN ? zapi_rt_dict[zrn->k.inType].sys2Name : memAsHexStringSep(&zrn->k.inType, 1, 0),
                 zrn->k.table, zrn->k.ifindex, zrn->metric, zrn->distance, zrn->flags, zrn->message);
 }
 
@@ -226,13 +226,24 @@ IDM_T redistribute_routes(struct avl_tree *redist_out_tree, struct avl_tree *red
                         if (roptn->bandwidth.val.u8 == 0) {
                                 dbgf_all(DBGT_INFO, "skipping %s bandwidth", roptn->nameKey);
                                 continue;
-                        }
+			}
+
+			if (rin->k.inType > BMX6_ROUTE_MAX_SUPP) {
+                                dbgf_all(DBGT_INFO, "skipping unsupported routeType=%d", rin->k.inType);
+                                continue;
+			}
 
                         if (/*roptn->bmx6_redist_bits &&*/
+				!roptn->bmx6_redist_all &&
                                 !bit_get(((uint8_t*) & roptn->bmx6_redist_bits),
                                 sizeof (roptn->bmx6_redist_bits)*8, rt_dict[rin->k.inType].sys2bmx)) {
 
                                 dbgf_all(DBGT_INFO, "skipping %s redist bits", roptn->nameKey);
+                                continue;
+                        }
+
+			if (roptn->bmx6_redist_sys && roptn->bmx6_redist_sys != rin->k.inType) {
+                                dbgf_all(DBGT_INFO, "skipping %s redist sys=%d != %d", roptn->nameKey, roptn->bmx6_redist_sys, rin->k.inType);
                                 continue;
                         }
 
@@ -439,9 +450,17 @@ int32_t opt_redist(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct opt_
                                 } else if (!strcmp(c->opt->name, ARG_REDIST_HYSTERESIS)) {
                                         ron->hysteresis = c->val ? strtol(c->val, NULL, 10) : DEF_REDIST_HYSTERESIS;
 
+                                } else if (!strcmp(c->opt->name, ARG_ROUTE_ALL)) {
+
+                                        ron->bmx6_redist_all = (c->val && strtol(c->val, NULL, 10) == 1 ) ? 1 : 0;
+
+                                } else if (!strcmp(c->opt->name, ARG_ROUTE_SYS)) {
+
+                                        ron->bmx6_redist_sys = c->val ? strtol(c->val, NULL, 10) : 0;
+
                                 } else {
                                         uint8_t t;
-                                        for (t = 0; t < BMX6_ROUTE_MAX; t++) {
+                                        for (t = 0; t <= BMX6_ROUTE_MAX_KNOWN; t++) {
                                                 if (bmx6_rt_dict[t].sys2Name && !strcmp(c->opt->name, bmx6_rt_dict[t].sys2Name)) {
                                                         bit_set((uint8_t*) &ron->bmx6_redist_bits,
                                                                 sizeof (ron->bmx6_redist_bits) * 8,

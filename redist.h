@@ -86,7 +86,11 @@
 
 #define NETWORK_NAME_LEN 32
 
-#define HLP_ROUTE_TYPE "redistribute route type (mandatory to enable at least one type)"
+#define ARG_ROUTE_ALL         "all"
+#define ARG_ROUTE_SYS         "sys"
+
+#define HLP_ROUTE_TYPE "redistribute bmx route type (mandatory to enable at least one type)"
+#define HLP_ROUTE_SYS "filter redistributed routes based on system id (ignored if unset, recommends: /all=1)"
 
 
 
@@ -128,10 +132,12 @@ struct redist_in_node {
 struct redistr_opt_node {
         char nameKey[NETWORK_NAME_LEN];
         struct net_key net;
-        uint32_t bmx6_redist_bits;
+	uint64_t bmx6_redist_bits;
         uint32_t hysteresis;
 	uint32_t table;
-        uint8_t netPrefixMin;
+	uint8_t bmx6_redist_all;
+	uint8_t bmx6_redist_sys;
+	uint8_t netPrefixMin;
         uint8_t netPrefixMax;
         uint8_t minAggregatePrefixLen;
         FMETRIC_U8_T bandwidth;

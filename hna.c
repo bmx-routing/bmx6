@@ -90,17 +90,17 @@ static int32_t tun_dedicated_to = DEF_TUN_OUT_TO;
 STATIC_FUNC
 void configure_tun_bit(uint8_t del, struct tun_bit_node *tbn, IDM_T asDfltTun);
 
-char* bmx6RouteBits2String(uint32_t bmx6_route_bits)
+char* bmx6RouteBits2String(uint64_t bmx6_route_bits)
 {
-	static char r[BMX6_ROUTE_MAX+1];
+	static char r[BMX6_ROUTE_MAX_SUPP+2];
 
 	//memset(r, ' ', sizeof(r));
 	//r[BMX6_ROUTE_MAX] = 0;
 
 	uint8_t t, p=0;
-	for (t = 0; t < BMX6_ROUTE_MAX; t++) {
+	for (t = 0; t <= BMX6_ROUTE_MAX_SUPP; t++) {
 		if (bit_get((uint8_t*) &bmx6_route_bits, sizeof (bmx6_route_bits) * 8, t))
-			r[p++] = bmx6_rt_dict[t].sys2Char;
+			r[p++] = bmx6_rt_dict[t].sys2Char ? bmx6_rt_dict[t].sys2Char : '?';
 	}
         if(p)
                 r[p] = 0;
@@ -2219,7 +2219,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
                         if (adv->bandwidth.val.u8 == 0)
                                 continue;
 
-			if(adv->bmx6_route_type >= BMX6_ROUTE_MAX)
+			if(adv->bmx6_route_type > BMX6_ROUTE_MAX_SUPP)
                                 continue;
 
                         if (it->op == TLV_OP_NEW) {
@@ -2329,7 +2329,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
 struct tun_out_status {
         char* name;
         GLOBAL_ID_T *id;
-        char type[BMX6_ROUTE_MAX+1];
+        char type[BMX6_ROUTE_MAX_SUPP+2];
         char src[IPX_PREFIX_STR_LEN];
         char net[IPX_PREFIX_STR_LEN];
         uint32_t min;
@@ -2481,7 +2481,7 @@ static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
                                 status->localTunIp = &tun->localIp;
                                 status->remoteTunIp = &tun->remoteIp;
 				status->tunId = tun->tunOutKey.tun6Id;
-                                status->advType = bmx6_rt_dict[tnn->tunNetKey.bmx6RouteType].sys2Name;
+                                status->advType = bmx6_rt_dict[tnn->tunNetKey.bmx6RouteType].sys2Name ? bmx6_rt_dict[tnn->tunNetKey.bmx6RouteType].sys2Name : "unknown";
                                 strcpy(status->advNet, netAsStr(&tnn->tunNetKey.netKey));
                                 strcpy(status->srcIngress, netAsStr(&tun->ingressPrefix[(tnn->tunNetKey.netKey.af==AF_INET)]));
                                 status->advBwVal = fmetric_u8_to_umetric(tnn->bandwidth);
@@ -2837,7 +2837,7 @@ int32_t opt_tun_search(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 
                                } else {
                                        uint8_t t;
-                                       for (t = 0; t < BMX6_ROUTE_MAX; t++) {
+                                       for (t = 0; t <= BMX6_ROUTE_MAX_KNOWN; t++) {
                                                if (bmx6_rt_dict[t].sys2Name && !strcmp(c->opt->name, bmx6_rt_dict[t].sys2Name)) {
                                                        bit_set((uint8_t*) &tsn->bmx6RouteBits,
                                                                sizeof (tsn->bmx6RouteBits) * 8,
