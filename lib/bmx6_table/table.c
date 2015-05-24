@@ -101,7 +101,7 @@ void redist_table_routes(void* laterp)
 		while ((rin=avl_iterate_item(&redist_in_tree, &an)))
 			rin->old = 1;
 
-		dbgf_sys(DBGT_INFO, "%sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
+		dbgf(changed?DBGL_SYS:DBGL_CHANGES, DBGT_INFO, " %sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
 			changed ? "" : "UN",
 			redist_out_tree.items, redist_in_tree.items, redist_opt_tree.items, tunXin6_net_adv_list.items);
 
@@ -122,7 +122,7 @@ void get_route_list_nlhdr(struct nlmsghdr *nh, void *unused )
 			struct net_key net = {.af=rtm->rtm_family, .mask=rtm->rtm_dst_len,
 			.ip=(rtm->rtm_family==AF_INET6) ? *((IPX_T *) RTA_DATA(rtap)) : ip4ToX(*((IP4_T *) RTA_DATA(rtap))) };
 
-			dbgf_sys(DBGT_INFO, "%s route=%s table=%d protocol=%s",	nh->nlmsg_type==RTM_NEWROUTE?"ADD":"DEL",
+			dbgf_track(DBGT_INFO, "%s route=%s table=%d protocol=%s",	nh->nlmsg_type==RTM_NEWROUTE?"ADD":"DEL",
 				netAsStr(&net), rtm->rtm_table, memAsHexStringSep(&rtm->rtm_protocol, 1, 0));
 
 			struct redist_in_node new = {.k = {.table = rtm->rtm_table, .inType = rtm->rtm_protocol, .net = net}};
