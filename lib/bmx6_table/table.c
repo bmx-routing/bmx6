@@ -60,7 +60,7 @@ static struct sys_route_dict rtredist_rt_dict[BMX6_ROUTE_MAX_SUPP+1];
 
 
 int rtevent_sk = 0;
-int32_t rtredist_delay = 200;
+int32_t rtredist_delay = 1200;
 
 STATIC_FUNC
 void redist_table_routes(void* laterp)
@@ -86,7 +86,7 @@ void redist_table_routes(void* laterp)
                 while ((rin = avl_next_item(&redist_in_tree, &rii.k))) {
                         rii = *rin;
 
-                        if (rin->old != rin->cnt)
+                        if (rin->old != (!!rin->cnt))
                                  changed = YES;
 
 			if (rin->cnt <= 0)
@@ -101,7 +101,7 @@ void redist_table_routes(void* laterp)
 		while ((rin=avl_iterate_item(&redist_in_tree, &an)))
 			rin->old = 1;
 
-		dbgf_track(DBGT_INFO, "%sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
+		dbgf_sys(DBGT_INFO, "%sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
 			changed ? "" : "UN",
 			redist_out_tree.items, redist_in_tree.items, redist_opt_tree.items, tunXin6_net_adv_list.items);
 

@@ -303,7 +303,7 @@ IDM_T redistribute_routes(struct avl_tree *redist_out_tree, struct avl_tree *red
 
                 if (routn->new != routn->old) { // 10, 11, 01, 00
                         redist_changed = YES;
-			dbgf_track(DBGT_INFO, "CHANGED: old=%d new=%d rtype=%d bandwith=%d net=%s",
+			dbgf_sys(DBGT_INFO, "CHANGED: old=%d new=%d rtype=%d bandwith=%d net=%s",
 				routn->old, routn->new, routn->k.bmx6_route_type, routn->k.bandwidth.val.u8, netAsStr(&routn->k.net));
 		}
 
