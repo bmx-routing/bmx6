@@ -42,7 +42,7 @@
 
 
 
-
+#define RTNL_RCV_MAX 66560 // 266240 // 133120 // less causes lost messages !!??
 
 
 

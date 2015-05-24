@@ -195,6 +195,25 @@ static int open_rtevent_netlink_sk(void)
 		return -1;
         }
 
+	int oldBuff=0;
+	socklen_t oldSize = sizeof(oldBuff);
+	int buffsize = 266240; // 133120 // 66560 // RTNL_RCV_MAX //seems all too small for 2K+ routes and heavy CPU load
+	int newBuff=0;
+	socklen_t newSize = sizeof(newBuff);
+
+	if (
+	     getsockopt(rtevent_sk, SOL_SOCKET, SO_RCVBUF, &oldBuff, &oldSize) < 0 ||
+	     setsockopt(rtevent_sk, SOL_SOCKET, SO_RCVBUFFORCE, &buffsize, sizeof(buffsize)) < 0 ||
+	     getsockopt(rtevent_sk, SOL_SOCKET, SO_RCVBUF, &newBuff, &newSize) < 0 ||
+	     newBuff < RTNL_RCV_MAX) {
+
+                dbgf_sys(DBGT_ERR, "can't setsockopts buffsize from=%d to=%d now=%d %s", oldBuff, buffsize, newBuff, strerror(errno));
+		rtevent_sk = 0;
+		return -1;
+	}
+
+	dbgf_sys(DBGT_ERR, "setsockopts buffsize from=%d to=%d now=%d", oldBuff, buffsize, newBuff);
+
 
 	return rtevent_sk;
 }

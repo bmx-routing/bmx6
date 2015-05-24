@@ -692,7 +692,7 @@ IDM_T rtnl_rcv( int fd, uint32_t pid, uint32_t seq, uint8_t cmd, uint8_t quiet, 
 
         //TODO: see ip/libnetlink.c rtnl_talk() for HOWTO
         do {
-                char buf[4096]; // less causes lost messages !!??
+                char buf[RTNL_RCV_MAX];
                 memset(buf, 0, sizeof(buf));
 
                 struct iovec iov = {.iov_base = buf, .iov_len = sizeof (buf)};
