@@ -57,10 +57,9 @@ static LIST_SIMPEL(tunXin6_net_adv_list, struct tunXin6_net_adv_node, list, list
 
 static struct sys_route_dict rtredist_rt_dict[BMX6_ROUTE_MAX_SUPP+1];
 
-
-
 int rtevent_sk = 0;
-int32_t rtredist_delay = 1200;
+
+int32_t rtredist_delay = DEF_REDIST_DELAY;
 
 
 STATIC_FUNC
@@ -310,6 +309,9 @@ int32_t opt_redistribute(uint8_t cmd, uint8_t _save, struct opt_type *opt, struc
 static struct opt_type rtredist_options[]= {
 //        ord parent long_name          shrt Attributes				*ival		min		max		default		*func,*syntax,*help
 
+        {ODI,0,ARG_REDIST_DELAY,          0,9,1, A_PS1, A_ADM, A_DYI, A_CFA, A_ANY, &rtredist_delay,MIN_REDIST_DELAY,MAX_REDIST_DELAY,DEF_REDIST_DELAY,0,   0,
+			ARG_VALUE_FORM,	HLP_REDIST_DELAY}
+        ,
  	{ODI,0,ARG_REDIST,     	          0,9,2,A_PM1N,A_ADM,A_DYI,A_CFA,A_ANY,	0,		0,		0,		0,0,		opt_redistribute,
 		        ARG_NAME_FORM,  HLP_REDIST},
 	{ODI,ARG_REDIST,ARG_REDIST_NET, 'n',9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,  0,              0,              0,              0,0,            opt_redistribute,
