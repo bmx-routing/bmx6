@@ -1670,7 +1670,7 @@ uint32_t fields_dbg_lines(struct ctrl_node *cn, uint16_t relevance, uint16_t dat
         return msgs_size;
 }
 
-void fields_dbg_table(struct ctrl_node *cn, uint16_t relevance, uint16_t data_size, uint8_t *data,
+void fields_dbg_table(struct ctrl_node *cn, uint16_t relevance, uint32_t data_size, uint8_t *data,
                           uint16_t min_msg_size, const struct field_format *format)
 {
         TRACE_FUNCTION_CALL;
