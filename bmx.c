@@ -1555,7 +1555,7 @@ uint32_t field_iterate(struct field_iterator *it)
         uint32_t field_bits = format->field_bits ? format->field_bits : it->var_bits;
         int32_t std_bits = field_standard_sizes[field_type];
 
-        dbgf_all(DBGT_INFO, "field_name=%s max_data_size=%d min_msg_size=%d msg_bit_pos=%d data=%p field=%d field_bits=%d field_bit_pos=%d var_bits=%d field_type=%d field_bits=%d std_bits=%d\n",
+        dbgf_all(DBGT_INFO, "field_name=%-16s max_data_size=%-5d min_msg_size=%-3d msg_bit_pos=%-6d data=%-9p field=%-2d field_bits=%-3d field_bit_pos=%-6d var_bits=%-2d field_type=%-2d field_bits=%-3d std_bits=%-3d",
                 format->field_name, it->data_size, it->min_msg_size, it->msg_bit_pos, it->data, it->field, it->field_bits, it->field_bit_pos, it->var_bits, field_type, format->field_bits, std_bits);
 
 
@@ -2059,6 +2059,8 @@ int32_t opt_status(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct opt_
 
                         if (cmd == OPT_APPLY && (data_len = ((*(handl->frame_creator))(handl, NULL)))) {
                                 dbg_printf(cn, "%s:\n", handl->status_name);
+				dbgf_track(DBGT_INFO, "name=%10s %6d / %6d = %6d %% %6d",
+					handl->status_name, data_len, handl->min_msg_size, (data_len / handl->min_msg_size), (data_len % handl->min_msg_size));
                                 fields_dbg_table(cn, relevance, data_len, handl->data, handl->min_msg_size, handl->format);
                         }
 
