@@ -2084,7 +2084,7 @@ int create_description_tlv_tunXin6_net_adv(struct tx_frame_iterator *it)
         TRACE_FUNCTION_CALL;
         IDM_T is4in6 = (it->frame_type == BMX_DSC_TLV_TUN4IN6_NET_ADV) ? YES : NO;
 	uint8_t af = is4in6 ? AF_INET : AF_INET6;
-        uint16_t m = 0;
+	uint16_t m = 0, should = 0;
         struct description_msg_tun6in6_net_adv adv;
 	UMETRIC_T umax = UMETRIC_FM8_MAX;
 
@@ -2101,6 +2101,7 @@ int create_description_tlv_tunXin6_net_adv(struct tx_frame_iterator *it)
 			adv.bandwidth = umetric_to_fmu8(&umax);
 
 			m = create_description_tlv_tunXin6_net_adv_msg(it, &adv, m, tin->nameKey.str);
+			should++;
 
 			dbgf_track(DBGT_INFO, "%s=%s dst=%s/%d type=%d tun6Id=%d bw=%d",
 				ARG_TUN_DEV, tin->nameKey.str, ipXAsStr(af, &adv.network), adv.networkLen,
@@ -2147,6 +2148,7 @@ int create_description_tlv_tunXin6_net_adv(struct tx_frame_iterator *it)
 		}
 
                 m = create_description_tlv_tunXin6_net_adv_msg(it, &adv, m, tun_name);
+		should++;
 
 		dbgf_track(DBGT_INFO, "%s=%s dst=%s/%d type=%d tun6Id=%d bw=%d",
 			ARG_TUN_IN, p->val, ipXAsStr(af, &adv.network), adv.networkLen,
@@ -2169,12 +2171,16 @@ int create_description_tlv_tunXin6_net_adv(struct tx_frame_iterator *it)
                         adv.bmx6_route_type = tan->bmx6_route_type;
 
                         m = create_description_tlv_tunXin6_net_adv_msg(it, &adv, m, tan->tunInDev);
+			should++;
                 }
 		dbgf_track(DBGT_INFO, "%s=%s dst=%s/%d type=%d tun6Id=%d bw=%d",
 			"PLUGINS", "???", ipXAsStr(af, &adv.network), adv.networkLen,
 			adv.bmx6_route_type, adv.tun6Id, adv.bandwidth.val.u8);
 
-        }
+	}
+
+	dbgf((should != m ? DBGL_SYS : DBGL_CHANGES), (should != m ? DBGT_WARN : DBGT_INFO), "created %d of %d %s advs %s",
+		m, should, (is4in6 ? "v4" : "v6"), (should != m ? "due to lack of description space!!":""));
 
         return m * (is4in6 ? sizeof (struct description_msg_tun4in6_net_adv) : sizeof (struct description_msg_tun6in6_net_adv));
 }
@@ -2185,7 +2191,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
         TRACE_FUNCTION_CALL;
         uint8_t family = it->frame_type == BMX_DSC_TLV_TUN4IN6_NET_ADV ? AF_INET : AF_INET6;
         uint16_t msg_size = it->handl->min_msg_size;
-        uint16_t pos;
+        uint16_t pos=0, cnt=0;
         static uint32_t tlv_new_counter = 0;
 
         uint8_t used = NO;
@@ -2271,7 +2277,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
 					assertion(-501578, (tnn->tunNetKey.ton->tunOutKey.on == tok.on));
 
                                         tnn->tlv_new_counter = tlv_new_counter;
-
+					cnt++;
 
                                 } else {
                                         dbgf_sys(DBGT_WARN, "no matching tunnel_node found for orig=%s tun6Id=%d",
@@ -2279,6 +2285,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
                                 }
                         }
                 }
+		dbgf_track(DBGT_INFO, "accepted %d/%d %s msgs", cnt, (pos/msg_size), (family==AF_INET?"v4":"v6"));
         }
 
         if (it->op == TLV_OP_NEW || it->op == TLV_OP_DEL) {
