@@ -121,7 +121,7 @@ void redist_rm_overlapping(struct avl_tree *redist_out_tree)
                                 if (is_ip_net_equal(&ovlp->k.net.ip, &routn->k.net.ip, ovlp->k.net.mask, routn->k.net.af)) {
                                         routn->new = 0;
                                         ovlp->minAggregatePrefixLen = XMAX(ovlp->minAggregatePrefixLen, routn->minAggregatePrefixLen);
-                                        dbgf_track(DBGT_INFO, "disable overlapping net=%s in favor of net=%s",
+                                        dbgf_all(DBGT_INFO, "disable overlapping net=%s in favor of net=%s",
                                                 netAsStr(&routn->k.net), netAsStr(&ovlp->k.net));
                                         break;
                                 }
@@ -299,11 +299,11 @@ IDM_T redistribute_routes(struct avl_tree *redist_out_tree, struct avl_tree *red
                                 *(routn = debugMalloc(sizeof (routf), -300505)) = routf;
                                 avl_insert(redist_out_tree, routn, -300506);
                                 if ( __dbgf_track() ) {
-                                        redist_dbg(DBGL_CHANGES, DBGT_INFO, __FUNCTION__, rin, rt_dict, "parsing", "adding");
+                                        redist_dbg(DBGL_ALL, DBGT_INFO, __FUNCTION__, rin, rt_dict, "parsing", "adding");
                                 }
                         } else {
                                 if ( __dbgf_track() ) {
-                                        redist_dbg(DBGL_CHANGES, DBGT_INFO, __FUNCTION__, rin, rt_dict, "parsing", "reusing");
+                                        redist_dbg(DBGL_ALL, DBGT_INFO, __FUNCTION__, rin, rt_dict, "parsing", "reusing");
                                 }
                         }
 
@@ -325,7 +325,7 @@ IDM_T redistribute_routes(struct avl_tree *redist_out_tree, struct avl_tree *red
 
                 if (routn->new != routn->old) { // 10, 11, 01, 00
                         redist_changed = YES;
-			dbgf_sys(DBGT_INFO, "CHANGED: old=%d new=%d rtype=%d bandwith=%d net=%s",
+			dbgf_track(DBGT_INFO, "CHANGED: old=%d new=%d rtype=%d bandwith=%d net=%s",
 				routn->old, routn->new, routn->k.bmx6_route_type, routn->k.bandwidth.val.u8, netAsStr(&routn->k.net));
 		}
 

@@ -2045,7 +2045,7 @@ uint16_t create_description_tlv_tunXin6_net_adv_msg(struct tx_frame_iterator *it
         struct tun_in_node *tun = set_tun6Id(tun_name, adv);
 
 
-	dbgf_track(DBGT_INFO, "name=%s src=%s dst=%s/%d",
+	dbgf_all(DBGT_INFO, "name=%s src=%s dst=%s/%d",
 		tun_name, tun ? ip6AsStr(&tun->remote) : "MISSING!", ip6AsStr(&adv->network), adv->networkLen);
 
 	assertion(-501442, (adv->bandwidth.val.u8));
