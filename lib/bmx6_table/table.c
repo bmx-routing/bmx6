@@ -42,7 +42,7 @@
 #include "metrics.h"
 #include "ip.h"
 #include "hna.h"
-#include "redist.c"
+#include "redist.h"
 #include "table.h"
 
 
@@ -62,49 +62,55 @@ static struct sys_route_dict rtredist_rt_dict[BMX6_ROUTE_MAX_SUPP+1];
 int rtevent_sk = 0;
 int32_t rtredist_delay = 1200;
 
+
 STATIC_FUNC
-void redist_table_routes(void* laterp)
+void redist_table_routes(IDM_T forceChanged)
+{
+	struct redist_in_node *rin;
+	struct redist_in_node rii;
+	struct avl_node *an=NULL;
+	memset(&rii, 0, sizeof (rii));
+
+	while ((rin = avl_next_item(&redist_in_tree, &rii.k))) {
+		rii = *rin;
+
+		if (!forceChanged && rin->old != (!!rin->cnt) && matching_redist_opt(rin, &redist_opt_tree, rtredist_rt_dict))
+			forceChanged = YES;
+
+		if (rin->cnt <= 0)
+			debugFree( avl_remove(&redist_in_tree, &rin->k, -300551), -300554);
+	}
+
+	if ( forceChanged) {
+		if ( redistribute_routes(&redist_out_tree, &redist_in_tree, &redist_opt_tree, rtredist_rt_dict) )
+			update_tunXin6_net_adv_list(&redist_out_tree, &tunXin6_net_adv_list);
+	}
+
+	while ((rin=avl_iterate_item(&redist_in_tree, &an)))
+		rin->old = 1;
+
+	dbgf(forceChanged ? DBGL_SYS : DBGL_CHANGES, DBGT_INFO, " %sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
+		forceChanged ? "" : "UN",
+		redist_out_tree.items, redist_in_tree.items, redist_opt_tree.items, tunXin6_net_adv_list.items);
+}
+
+
+STATIC_FUNC
+void schedule_table_routes(void* laterp)
 {
 	static IDM_T scheduled = NO;
 
 	if ( laterp && !scheduled) {
 		scheduled = YES;
-		task_register(rtredist_delay, redist_table_routes, NULL, -300550);
+		task_register(rtredist_delay, schedule_table_routes, NULL, -300550);
 
 	} else if ( !laterp ) {
 
 		dbgf_track(DBGT_INFO, " ");
 		scheduled = NO;
-		task_remove(redist_table_routes, NULL);
+		task_remove(schedule_table_routes, NULL);
 
-		IDM_T changed = NO;
-
-                struct redist_in_node *rin;
-                struct redist_in_node rii;
-		struct avl_node *an=NULL;
-                memset(&rii, 0, sizeof (rii));
-                while ((rin = avl_next_item(&redist_in_tree, &rii.k))) {
-                        rii = *rin;
-
-                        if (rin->old != (!!rin->cnt))
-                                 changed = YES;
-
-			if (rin->cnt <= 0)
-				debugFree( avl_remove(&redist_in_tree, &rin->k, -300551), -300554);
-                }
-
-                if ( changed) {
-			if ( redistribute_routes(&redist_out_tree, &redist_in_tree, &redist_opt_tree, rtredist_rt_dict) )
-				update_tunXin6_net_adv_list(&redist_out_tree, &tunXin6_net_adv_list);
-		}
-		
-		while ((rin=avl_iterate_item(&redist_in_tree, &an)))
-			rin->old = 1;
-
-		dbgf(changed?DBGL_SYS:DBGL_CHANGES, DBGT_INFO, " %sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
-			changed ? "" : "UN",
-			redist_out_tree.items, redist_in_tree.items, redist_opt_tree.items, tunXin6_net_adv_list.items);
-
+		redist_table_routes(NO);
 	}
 }
 
@@ -139,7 +145,7 @@ void get_route_list_nlhdr(struct nlmsghdr *nh, void *unused )
 				rin->cnt = 1;
 				avl_insert(&redist_in_tree, rin, -300553);
 			}
-			redist_table_routes((void*)1);
+			schedule_table_routes((void*)1);
 		}
                 rtap = RTA_NEXT(rtap, rtl);
         }
@@ -268,7 +274,7 @@ int32_t opt_redistribute(uint8_t cmd, uint8_t _save, struct opt_type *opt, struc
 	if (cmd == OPT_SET_POST && initialized && changed) {
 
 		dbgf_track(DBGT_INFO, "Updating...");
-		redist_table_routes(NULL);
+		redist_table_routes(YES);
 
 		changed = NO;
 	}

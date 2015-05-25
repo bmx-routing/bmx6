@@ -42,7 +42,7 @@
 #include "metrics.h"
 #include "ip.h"
 #include "hna.h"
-#include "redist.c"
+#include "redist.h"
 #include "quagga.h"
 
 
