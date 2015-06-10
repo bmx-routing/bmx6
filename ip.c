@@ -685,15 +685,17 @@ struct dev_node * dev_get_by_name(char *name)
         return avl_find_item(&dev_name_tree, &key);
 }
 
-IDM_T rtnl_rcv( int fd, uint32_t pid, uint32_t seq, uint8_t cmd, uint8_t quiet, void (*func) (struct nlmsghdr *nh, void *data) ,void *data)
+int rtnl_rcv( int fd, uint32_t pid, uint32_t seq, uint8_t cmd, uint8_t quiet, void (*func) (struct nlmsghdr *nh, void *data) ,void *data)
 {
         int max_retries = 10;
         uint8_t more_data;
+	int iteration = 0;
 
         //TODO: see ip/libnetlink.c rtnl_talk() for HOWTO
         do {
                 char buf[RTNL_RCV_MAX];
                 memset(buf, 0, sizeof(buf));
+		iteration++;
 
                 struct iovec iov = {.iov_base = buf, .iov_len = sizeof (buf)};
                 struct sockaddr_nl nla = {.nl_family = AF_NETLINK }; //{.nl_family = AF_NETLINK}; //TODO: not sure here, maybe only for cmd==IP_ADDR_GET and IP_LINK_GET
@@ -706,15 +708,12 @@ IDM_T rtnl_rcv( int fd, uint32_t pid, uint32_t seq, uint8_t cmd, uint8_t quiet, 
 		int status = recvmsg( fd, &msg, 0 );
                 int err = errno;
 
-                if (err) {
-                        dbgf(DBGL_CHANGES, DBGT_INFO, "rcvd %s status=%d err=%d %s",
-                                trackt2str(cmd), status, err, strerror(err));
-                }
+		dbgf((err || status <= 0) ? DBGL_SYS : DBGL_CHANGES, (err || status <= 0) ? DBGT_WARN : DBGT_INFO,
+			"rcvd cmd=%s fd=%d iteration=%d retries=%d status=%d err=%d %s",
+			trackt2str(cmd), fd, iteration, max_retries, status, err, strerror(err));
 
 
 		if ( status < 0 ) {
-
-                        dbgf_sys(DBGT_ERR, "%s", strerror(err));
 
                         if ( (err == EINTR || err == EWOULDBLOCK || err == EAGAIN ) && max_retries-- > 0 ) {
                                 usleep(500);
@@ -723,14 +722,16 @@ IDM_T rtnl_rcv( int fd, uint32_t pid, uint32_t seq, uint8_t cmd, uint8_t quiet, 
                                 continue;
                         } else {
                                 dbgf_sys(DBGT_ERR, "giving up!");
-                                EXITERROR(-501096, (0));
-                                return FAILURE;
+				return -501096;
+//				EXITERROR(-501096, (0));
+//				return FAILURE;
                         }
 
 		} else if (status == 0) {
                         dbgf_sys(DBGT_ERR, "netlink EOF");
-                        EXITERROR(-501097, (0));
-                        return FAILURE;
+			return -501097;
+//			EXITERROR(-501097, (0));
+//			return FAILURE;
                 }
 
                 if (msg.msg_flags & MSG_TRUNC) {
@@ -801,7 +802,9 @@ IDM_T rtnl_talk(struct rtnl_handle *iprth, struct nlmsghdr *nlh, uint8_t cmd, ui
 
 
 
-	IDM_T result = rtnl_rcv( iprth->fd, iprth->local.nl_pid, iprth->seq, cmd, quiet, func, data );
+	int result = rtnl_rcv( iprth->fd, iprth->local.nl_pid, iprth->seq, cmd, quiet, func, data );
+
+	ASSERTION(result, (result >= FAILURE));
 
 	iprth->busy = 0;
 	return result;
