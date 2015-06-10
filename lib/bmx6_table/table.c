@@ -53,11 +53,10 @@ static AVL_TREE(redist_in_tree, struct redist_in_node, k);
 static AVL_TREE(redist_opt_tree, struct redistr_opt_node, nameKey);
 static AVL_TREE(redist_out_tree, struct redist_out_node, k);
 
-static LIST_SIMPEL(tunXin6_net_adv_list, struct tunXin6_net_adv_node, list, list);
+static LIST_SIMPEL(table_net_adv_list, struct tunXin6_net_adv_node, list, list);
 
 static struct sys_route_dict rtredist_rt_dict[BMX6_ROUTE_MAX_SUPP+1];
 
-int rtevent_sk = 0;
 
 int32_t rtredist_delay = DEF_REDIST_DELAY;
 
@@ -82,7 +81,7 @@ void redist_table_routes(IDM_T forceChanged)
 
 	if ( forceChanged) {
 		if ( redistribute_routes(&redist_out_tree, &redist_in_tree, &redist_opt_tree, rtredist_rt_dict) )
-			update_tunXin6_net_adv_list(&redist_out_tree, &tunXin6_net_adv_list);
+			update_tunXin6_net_adv_list(&redist_out_tree, &table_net_adv_list);
 	}
 
 	while ((rin=avl_iterate_item(&redist_in_tree, &an)))
@@ -90,7 +89,7 @@ void redist_table_routes(IDM_T forceChanged)
 
 	dbgf(forceChanged ? DBGL_SYS : DBGL_CHANGES, DBGT_INFO, " %sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
 		forceChanged ? "" : "UN",
-		redist_out_tree.items, redist_in_tree.items, redist_opt_tree.items, tunXin6_net_adv_list.items);
+		redist_out_tree.items, redist_in_tree.items, redist_opt_tree.items, table_net_adv_list.items);
 }
 
 
@@ -150,29 +149,36 @@ void get_route_list_nlhdr(struct nlmsghdr *nh, void *unused )
         }
 }
 
+STATIC_FUNC
+int32_t sync_redist_routes(IDM_T cleanup, IDM_T resync);
 
 static void recv_rtevent_netlink_sk(int sk)
 {
         TRACE_FUNCTION_CALL;
-	char buf[4096]; //test this with a very small value !!
-	struct sockaddr_nl sa;
-        struct iovec iov = {.iov_base = buf, .iov_len = sizeof (buf)};
-	assertion(-501528, (sk==rtevent_sk));
+//	char buf[4096]; //test this with a very small value !!
+//	struct sockaddr_nl sa;
+//	struct iovec iov = {.iov_base = buf, .iov_len = sizeof(buf)};
+//	assertion(-501528, (sk==rtevent_sk));
 
         dbgf_all(DBGT_INFO, "detected changed routes! Going to check...");
-
+/*
         struct msghdr msg; // = {(void *) & sa, sizeof (sa), &iov, 1, NULL, 0, 0};
         memset( &msg, 0, sizeof( struct msghdr));
         msg.msg_name = (void *)&sa;
-        msg.msg_namelen = sizeof(sa); /* Length of address data.  */
-        msg.msg_iov = &iov; /* Vector of data to send/receive into.  */
-        msg.msg_iovlen = 1; /* Number of elements in the vector.  */
+        msg.msg_namelen = sizeof(sa); // Length of address data.
+        msg.msg_iov = &iov; // Vector of data to send/receive into.
+        msg.msg_iovlen = 1; // Number of elements in the vector.
+*/
+	int result = rtnl_rcv( sk, 0, 0, IP_ROUTE_GET, NO, get_route_list_nlhdr, NULL );
 
-	rtnl_rcv( sk, 0, 0, IP_ROUTE_GET, NO, get_route_list_nlhdr, NULL );
+	if (result != SUCCESS)
+		sync_redist_routes(NO, YES);
 }
 
-static int open_rtevent_netlink_sk(void)
+STATIC_FUNC
+int open_rtevent_netlink_sk(void)
 {
+	int rtevent_sk = 0;
 	struct sockaddr_nl sa;
 	int32_t unix_opts;
 	memset (&sa, 0, sizeof(sa));
@@ -212,7 +218,7 @@ static int open_rtevent_netlink_sk(void)
 	     getsockopt(rtevent_sk, SOL_SOCKET, SO_RCVBUF, &newBuff, &newSize) < 0 ||
 	     newBuff < RTNL_RCV_MAX) {
 
-                dbgf_sys(DBGT_ERR, "can't setsockopts buffsize from=%d to=%d now=%d %s", oldBuff, buffsize, newBuff, strerror(errno));
+                dbgf_sys(DBGT_WARN, "can't setsockopts buffsize from=%d to=%d now=%d %s", oldBuff, buffsize, newBuff, strerror(errno));
 		rtevent_sk = 0;
 		return -1;
 	}
@@ -220,18 +226,72 @@ static int open_rtevent_netlink_sk(void)
 	dbgf_sys(DBGT_ERR, "setsockopts buffsize from=%d to=%d now=%d", oldBuff, buffsize, newBuff);
 
 
+	set_fd_hook( rtevent_sk, recv_rtevent_netlink_sk, ADD);
+
 	return rtevent_sk;
 }
 
-static void close_rtevent_netlink_sk(void)
+STATIC_FUNC
+int close_rtevent_netlink_sk(int rtevent_sk)
 {
+
+	set_fd_hook(rtevent_sk, recv_rtevent_netlink_sk, DEL);
 
 	if ( rtevent_sk > 0 )
 		close( rtevent_sk );
 
-	rtevent_sk = 0;
+	return 0;
 }
 
+STATIC_FUNC
+int32_t sync_redist_routes(IDM_T cleanup, IDM_T resync)
+{
+	static int rtevent_sk = 0;
+
+	if (cleanup) {
+
+		rtevent_sk = close_rtevent_netlink_sk(rtevent_sk);
+
+		set_tunXin6_net_adv_list(DEL, &table_net_adv_list);
+
+		while (redist_in_tree.items)
+			debugFree(avl_remove_first_item(&redist_in_tree, -300487), -300488);
+
+		while (redist_out_tree.items) {
+			debugFree(avl_remove_first_item(&redist_out_tree, -300513), -300514);
+			my_description_changed = YES;
+		}
+
+		while (table_net_adv_list.items)
+			debugFree(list_del_head(&table_net_adv_list), -300515);
+
+	} else if (resync) {
+
+		dbgf_sys(DBGT_ERR, "rt-events out of sync. Trying to resync...");
+
+		rtevent_sk = close_rtevent_netlink_sk(rtevent_sk);
+
+		while (redist_in_tree.items)
+			debugFree(avl_remove_first_item(&redist_in_tree, -300487), -300488);
+
+		kernel_get_route(NO, AF_INET, 0, get_route_list_nlhdr);
+		kernel_get_route(NO, AF_INET6, 0, get_route_list_nlhdr);
+
+		rtevent_sk = open_rtevent_netlink_sk();
+
+	} else {
+
+		kernel_get_route(NO, AF_INET, 0, get_route_list_nlhdr);
+		kernel_get_route(NO, AF_INET6, 0, get_route_list_nlhdr);
+
+		set_tunXin6_net_adv_list(ADD, &table_net_adv_list);
+
+		rtevent_sk = open_rtevent_netlink_sk();
+	}
+
+
+	return rtevent_sk;
+}
 
 
 STATIC_FUNC
@@ -250,23 +310,7 @@ int32_t opt_redistribute(uint8_t cmd, uint8_t _save, struct opt_type *opt, struc
 
 		dbgf_track(DBGT_INFO, "Initializing...");
 
-		kernel_get_route(NO, AF_INET, 0, get_route_list_nlhdr);
-		kernel_get_route(NO, AF_INET6, 0, get_route_list_nlhdr);
-
-/*
-		struct redist_in_node *rin;
-		struct avl_node *an=NULL;
-		while ((rin=avl_iterate_item(&redist_in_tree, &an))) {
-			dbgf_track(DBGT_INFO, "current routes: net=%s table=%d cnt=%d",
-				netAsStr(&rin->k.net), rin->k.table, rin->cnt);
-		}
-*/
-
-		set_tunXin6_net_adv_list(ADD, &tunXin6_net_adv_list);
-
-		open_rtevent_netlink_sk();
-		set_fd_hook( rtevent_sk, recv_rtevent_netlink_sk, ADD);
-
+		sync_redist_routes(NO, NO);
 		initialized = YES;
 	}
 
@@ -282,21 +326,7 @@ int32_t opt_redistribute(uint8_t cmd, uint8_t _save, struct opt_type *opt, struc
 
 		dbgf_track(DBGT_INFO, "Cleaning up...");
 
-		set_tunXin6_net_adv_list(DEL, &tunXin6_net_adv_list);
-		set_fd_hook(rtevent_sk, recv_rtevent_netlink_sk, DEL);
-		close_rtevent_netlink_sk();
-
-		while (redist_in_tree.items)
-			debugFree(avl_remove_first_item(&redist_in_tree, -300487), -300488);
-
-		while (redist_out_tree.items) {
-			debugFree(avl_remove_first_item(&redist_out_tree, -300513), -300514);
-			my_description_changed = YES;
-		}
-
-		while (tunXin6_net_adv_list.items)
-			debugFree(list_del_head(&tunXin6_net_adv_list), -300515);
-		
+		sync_redist_routes(YES, NO);
 
 		initialized = NO;
 		changed = NO;
