@@ -87,7 +87,7 @@ static AVL_TREE(redist_out_tree, struct redist_out_node, k);
 
 //static AVL_TREE(export_opt_tree, struct export_opt_node, nameKey);
 
-static LIST_SIMPEL(tunXin6_net_adv_list, struct tunXin6_net_adv_node, list, list);
+static LIST_SIMPEL(quagga_net_adv_list, struct tunXin6_net_adv_node, list, list);
 
 static struct zebra_cfg zcfg;
 
@@ -269,7 +269,7 @@ void zdata_parse(void)
 
                 if (changed_routes) {
                         if ( redistribute_routes(&redist_out_tree, &zroute_tree, &redist_opt_tree, zapi_rt_dict) )
-				update_tunXin6_net_adv_list(&redist_out_tree, &tunXin6_net_adv_list);
+				update_tunXin6_net_adv_list(&redist_out_tree, &quagga_net_adv_list);
 		}
         }
 }
@@ -555,8 +555,8 @@ void zsock_disconnect(void)
                 my_description_changed = YES;
         }
 
-        while (tunXin6_net_adv_list.items) {
-                struct tunXin6_net_adv_node *tn = list_del_head(&tunXin6_net_adv_list);
+        while (quagga_net_adv_list.items) {
+                struct tunXin6_net_adv_node *tn = list_del_head(&quagga_net_adv_list);
                 debugFree(tn, -300515);
         }
 
@@ -808,7 +808,7 @@ int32_t opt_redistribute(uint8_t cmd, uint8_t _save, struct opt_type *opt, struc
 
                         zsock_send_redist_request();
 			if ( redistribute_routes(&redist_out_tree, &zroute_tree, &redist_opt_tree, zapi_rt_dict) )
-				update_tunXin6_net_adv_list(&redist_out_tree, &tunXin6_net_adv_list);
+				update_tunXin6_net_adv_list(&redist_out_tree, &quagga_net_adv_list);
                 }
 
                 changed = NO;
@@ -872,7 +872,7 @@ static void quagga_cleanup( void )
         if (zcfg.socket)
                 zsock_disconnect();
 
-        set_tunXin6_net_adv_list(DEL, &tunXin6_net_adv_list);
+        set_tunXin6_net_adv_list(DEL, &quagga_net_adv_list);
 
 }
 
@@ -906,7 +906,7 @@ static int32_t quagga_init( void )
 
         register_options_array(quagga_options, sizeof ( quagga_options), CODE_CATEGORY_NAME);
 
-        set_tunXin6_net_adv_list(ADD, &tunXin6_net_adv_list);
+        set_tunXin6_net_adv_list(ADD, &quagga_net_adv_list);
 
 
 	return SUCCESS;
