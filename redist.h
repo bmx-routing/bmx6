@@ -126,7 +126,8 @@ struct redist_in_node {
         int8_t cnt;
         uint8_t old;
         uint32_t metric;
-        uint8_t distance;
+	uint8_t distance;
+	struct redistr_opt_node *roptn;
 };
 
 struct redistr_opt_node {

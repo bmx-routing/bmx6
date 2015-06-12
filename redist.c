@@ -283,7 +283,9 @@ IDM_T redistribute_routes(struct avl_tree *redist_out_tree, struct avl_tree *red
 
         for (rii = NULL; (rin = avl_iterate_item(redist_in_tree, &rii));) {
 
-		if ((roptn = matching_redist_opt(rin, redist_opt_tree, rt_dict))) {
+		ASSERTION(-500000, IMPLIES(rin->roptn, rin->roptn == matching_redist_opt(rin, redist_opt_tree, rt_dict)));
+
+		if ((roptn = rin->roptn ? rin->roptn : matching_redist_opt(rin, redist_opt_tree, rt_dict))) {
 
 			memset(&routf, 0, sizeof (routf));
 
@@ -299,11 +301,11 @@ IDM_T redistribute_routes(struct avl_tree *redist_out_tree, struct avl_tree *red
                                 *(routn = debugMalloc(sizeof (routf), -300505)) = routf;
                                 avl_insert(redist_out_tree, routn, -300506);
                                 if ( __dbgf_track() ) {
-                                        redist_dbg(DBGL_ALL, DBGT_INFO, __FUNCTION__, rin, rt_dict, "parsing", "adding");
+                                        redist_dbg(DBGL_CHANGES, DBGT_INFO, __FUNCTION__, rin, rt_dict, "parsing", "adding");
                                 }
                         } else {
                                 if ( __dbgf_track() ) {
-                                        redist_dbg(DBGL_ALL, DBGT_INFO, __FUNCTION__, rin, rt_dict, "parsing", "reusing");
+                                        redist_dbg(DBGL_CHANGES, DBGT_INFO, __FUNCTION__, rin, rt_dict, "parsing", "reusing");
                                 }
                         }
 
