@@ -72,7 +72,9 @@ void redist_table_routes(IDM_T forceChanged)
 	while ((rin = avl_next_item(&redist_in_tree, &rii.k))) {
 		rii = *rin;
 
-		if (!forceChanged && rin->old != (!!rin->cnt) && matching_redist_opt(rin, &redist_opt_tree, rtredist_rt_dict))
+		ASSERTION(-500000, matching_redist_opt(rin, &redist_opt_tree, rtredist_rt_dict));
+
+		if (!forceChanged && rin->old != (!!rin->cnt))
 			forceChanged = YES;
 
 		if (rin->cnt <= 0)
@@ -131,19 +133,25 @@ void get_route_list_nlhdr(struct nlmsghdr *nh, void *unused )
 
 			struct redist_in_node new = {.k = {.table = rtm->rtm_table, .inType = rtm->rtm_protocol, .net = net}};
 			struct redist_in_node *rin = avl_find_item(&redist_in_tree, &new.k);
-			assertion(-501527, IMPLIES(nh->nlmsg_type==RTM_DELROUTE, rin && rin->cnt>0));
 
 			if (rin) {
-				
-				rin->cnt += (nh->nlmsg_type==RTM_NEWROUTE ? 1 : -1);
 
-			} else {
+				ASSERTION(-500000, (rin->roptn && rin->roptn == matching_redist_opt(&new, &redist_opt_tree, rtredist_rt_dict)));
+				assertion(-501527, IMPLIES(nh->nlmsg_type==RTM_DELROUTE, (rin->cnt>0)));
+
+				rin->cnt += (nh->nlmsg_type==RTM_NEWROUTE ? 1 : -1);
+				schedule_table_routes((void*)1);
+
+			} else if ((new.roptn = matching_redist_opt(&new, &redist_opt_tree, rtredist_rt_dict))) {
+
+				assertion(-500000, (nh->nlmsg_type == RTM_NEWROUTE));
+
 				rin = debugMalloc(sizeof(new), -300552);
 				*rin = new;
 				rin->cnt = 1;
 				avl_insert(&redist_in_tree, rin, -300553);
+				schedule_table_routes((void*)1);
 			}
-			schedule_table_routes((void*)1);
 		}
                 rtap = RTA_NEXT(rtap, rtl);
         }
@@ -274,10 +282,12 @@ int32_t sync_redist_routes(IDM_T cleanup, IDM_T resync)
 		while (redist_in_tree.items)
 			debugFree(avl_remove_first_item(&redist_in_tree, -300487), -300488);
 
+		rtevent_sk = open_rtevent_netlink_sk();
+
 		kernel_get_route(NO, AF_INET, 0, get_route_list_nlhdr);
 		kernel_get_route(NO, AF_INET6, 0, get_route_list_nlhdr);
 
-		rtevent_sk = open_rtevent_netlink_sk();
+		redist_table_routes(YES);
 
 	} else {
 
@@ -317,7 +327,8 @@ int32_t opt_redistribute(uint8_t cmd, uint8_t _save, struct opt_type *opt, struc
 	if (cmd == OPT_SET_POST && initialized && changed) {
 
 		dbgf_track(DBGT_INFO, "Updating...");
-		redist_table_routes(YES);
+//		redist_table_routes(YES);
+		sync_redist_routes(NO, YES);
 
 		changed = NO;
 	}
