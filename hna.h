@@ -494,7 +494,11 @@ struct tun_dev_node {
         int32_t ifIdx;
 	uint16_t curr_mtu; // DEF_TUN_OUT_MTU == orig_mtu
 	uint16_t orig_mtu;
-        struct avl_tree tun_bit_tree[2];
+
+	struct user_net_device_stats stats;
+	IDM_T stats_captured;
+
+	struct avl_tree tun_bit_tree[2];
 };
 
 struct tun_in_node {

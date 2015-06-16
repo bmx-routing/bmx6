@@ -789,6 +789,25 @@ void tun_out_state_set(struct tun_out_node *ton, IDM_T tdn_state)
 STATIC_FUNC
 void tun_out_state_catchAll(void *tonp)
 {
+	assertion(-500000, (tun_dedicated_to>0));
+
+	struct tun_out_node *ton = tonp;
+	struct tun_dev_node *tdn = ton->tdnDedicated[0] ? ton->tdnDedicated[0] : ton->tdnDedicated[1];
+
+	assertion(-500000, (tdn));
+	assertion(-500000, IMPLIES(ton->tdnDedicated[0], ton->tdnDedicated[0] == tdn));
+	assertion(-500000, IMPLIES(ton->tdnDedicated[1], ton->tdnDedicated[1] == tdn));
+
+	IDM_T stats_captured = tdn->stats_captured;
+	unsigned long long tx_packets = tdn->stats.tx_packets;
+
+	tdn->stats_captured = kernel_get_ifstats(&tdn->stats, tdn->nameKey.str);
+
+	if (stats_captured == SUCCESS && tdn->stats_captured == SUCCESS && tx_packets != tdn->stats.tx_packets) {
+		task_register(tun_dedicated_to, tun_out_state_catchAll, ton, -300000);
+		return;
+	}
+
 	tun_out_state_set(tonp, TDN_STATE_CATCHALL);
 }
 
@@ -1185,6 +1204,8 @@ struct tun_dev_node *tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
 				tdn->ifIdx = kernel_tun_add(tdn->nameKey.str, IPPROTO_IP, &ton->localIp, &ton->remoteIp);
 				tdn->orig_mtu = kernel_get_mtu(tdn->nameKey.str);
 				tdn->curr_mtu = set_tun_out_mtu( tdn->nameKey.str, tdn->orig_mtu, DEF_TUN_OUT_MTU, tun_out_mtu);
+
+				tdn->stats_captured = kernel_get_ifstats(&tdn->stats, tdn->nameKey.str);
 
 				assertion(-501485, (tdn->ifIdx > 0));
 				assertion(-501486, (tdn->orig_mtu >= MIN_TUN_OUT_MTU));
@@ -3155,6 +3176,7 @@ int32_t opt_tun_state_dedicated_to(uint8_t cmd, uint8_t _save, struct opt_type *
 					if (tun_dedicated_to==0) {
 						tun_out_state_set(ton, TDN_STATE_DEDICATED);
 					} else if (tun_dedicated_to>0) {
+
 					}
 				}
 
