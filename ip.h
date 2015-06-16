@@ -293,6 +293,39 @@ extern struct avl_tree dev_name_tree;
 
 //extern IDM_T dev_soft_conf_changed; // temporary enabled to trigger changed interface configuration
 
+#define IFCONFIG_PATH_PROCNET_DEV		"/proc/net/dev"
+
+struct user_net_device_stats {
+	unsigned long long rx_packets; /* total packets received       */
+	unsigned long long tx_packets; /* total packets transmitted    */
+	//	unsigned long long rx_bytes; /* total bytes received         */
+	//	unsigned long long tx_bytes; /* total bytes transmitted      */
+	//	unsigned long rx_errors; /* bad packets received         */
+	//	unsigned long tx_errors; /* packet transmit problems     */
+	//	unsigned long rx_dropped; /* no space in linux buffers    */
+	//	unsigned long tx_dropped; /* no space available in linux  */
+	//	unsigned long rx_multicast; /* multicast packets received   */
+	//	unsigned long rx_compressed;
+	//	unsigned long tx_compressed;
+	//	unsigned long collisions;
+
+	/* detailed rx_errors: */
+	//	unsigned long rx_length_errors;
+	//	unsigned long rx_over_errors; /* receiver ring buff overflow  */
+	//	unsigned long rx_crc_errors; /* recved pkt with crc error    */
+	//	unsigned long rx_frame_errors; /* recv'd frame alignment error */
+	//	unsigned long rx_fifo_errors; /* recv'r fifo overrun          */
+	//	unsigned long rx_missed_errors; /* receiver missed packet     */
+	/* detailed tx_errors */
+	//	unsigned long tx_aborted_errors;
+	//	unsigned long tx_carrier_errors;
+	//	unsigned long tx_fifo_errors;
+	//	unsigned long tx_heartbeat_errors;
+	//	unsigned long tx_window_errors;
+};
+
+
+
 struct nlh_req {
 	struct nlmsghdr nlh;
 };
@@ -688,6 +721,9 @@ uint32_t kernel_get_mtu(char *name);
 int32_t kernel_get_ifidx( char *name );
 IDM_T kernel_set_mtu(char *name, uint16_t mtu);
 IDM_T kernel_get_route(uint8_t quiet, uint8_t family, uint32_t table, void (*func) (struct nlmsghdr *nh, void *data) );
+
+// from net-tools: ifconfig.c and lib/interface.c
+IDM_T kernel_get_ifstats(struct user_net_device_stats *stats, char *target);
 
 struct sockaddr_storage set_sockaddr_storage(uint8_t af, IPX_T *ipx, int32_t port);
 void set_ipexport( void (*func) (int8_t del, const struct net_key *dst, uint32_t oif_idx, IPX_T *via, uint32_t metric, uint8_t distance) );

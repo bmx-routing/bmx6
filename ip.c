@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <sys/socket.h>
 #include <string.h>
 #include <errno.h>
@@ -1571,7 +1572,162 @@ IDM_T kernel_set_mtu(char *name, uint16_t mtu)
 	return SUCCESS;
 }
 
+STATIC_FUNC
+char *proc_get_name(char *name, char *p)
+{
+	while (isspace(*p))
+		p++;
+	while (*p) {
+		if (isspace(*p))
+			break;
+		if (*p == ':') { /* could be an alias */
+			char *dot = p, *dotname = name;
+			*name++ = *p++;
+			while (isdigit(*p))
+				*name++ = *p++;
+			if (*p != ':') { /* it wasn't, backup */
+				p = dot;
+				name = dotname;
+			}
+			if (*p == '\0')
+				return NULL;
+			p++;
+			break;
+		}
+		*name++ = *p++;
+	}
+	*name++ = '\0';
+	return p;
+}
 
+STATIC_FUNC
+int proc_netdev_version(char *buf)
+{
+	if (strstr(buf, "compressed"))
+		return 3;
+	if (strstr(buf, "bytes"))
+		return 2;
+	return 1;
+}
+
+STATIC_FUNC
+int proc_get_dev_fields(char *bp, struct user_net_device_stats *stats, int procnetdev_vsn)
+{
+	unsigned long long ullTrash;
+	unsigned long ulTrash;
+
+	switch (procnetdev_vsn) {
+
+	case 3:
+		sscanf(bp,
+			"%llu %llu %lu %lu %lu %lu %lu %lu %llu %llu %lu %lu %lu %lu %lu %lu",
+			&ullTrash,//&stats->rx_bytes,
+			&stats->rx_packets,
+			&ulTrash,//&stats->rx_errors,
+			&ulTrash,//&stats->rx_dropped,
+			&ulTrash,//&stats->rx_fifo_errors,
+			&ulTrash,//&stats->rx_frame_errors,
+			&ulTrash,//&stats->rx_compressed,
+			&ulTrash,//&stats->rx_multicast,
+
+			&ullTrash,//&stats->tx_bytes,
+			&stats->tx_packets,
+			&ulTrash,//&stats->tx_errors,
+			&ulTrash,//&stats->tx_dropped,
+			&ulTrash,//&stats->tx_fifo_errors,
+			&ulTrash,//&stats->collisions,
+			&ulTrash,//&stats->tx_carrier_errors,
+			&ulTrash//&stats->tx_compressed
+			);
+		break;
+	case 2:
+		sscanf(bp, "%llu %llu %lu %lu %lu %lu %llu %llu %lu %lu %lu %lu %lu",
+			&ullTrash,//&stats->rx_bytes,
+			&stats->rx_packets,
+			&ulTrash,//&stats->rx_errors,
+			&ulTrash,//&stats->rx_dropped,
+			&ulTrash,//&stats->rx_fifo_errors,
+			&ulTrash,//&stats->rx_frame_errors,
+
+			&ullTrash,//&stats->tx_bytes,
+			&stats->tx_packets,
+			&ulTrash,//&stats->tx_errors,
+			&ulTrash,//&stats->tx_dropped,
+			&ulTrash,//&stats->tx_fifo_errors,
+			&ulTrash,//&stats->collisions,
+			&ulTrash//&stats->tx_carrier_errors
+			);
+		//stats->rx_multicast = 0;
+		break;
+	case 1:
+		sscanf(bp, "%llu %lu %lu %lu %lu %llu %lu %lu %lu %lu %lu",
+			&stats->rx_packets,
+			&ulTrash,//&stats->rx_errors,
+			&ulTrash,//&stats->rx_dropped,
+			&ulTrash,//&stats->rx_fifo_errors,
+			&ulTrash,//&stats->rx_frame_errors,
+
+			&stats->tx_packets,
+			&ulTrash,//&stats->tx_errors,
+			&ulTrash,//&stats->tx_dropped,
+			&ulTrash,//&stats->tx_fifo_errors,
+			&ulTrash,//&stats->collisions,
+			&ulTrash//&stats->tx_carrier_errors
+			);
+		//stats->rx_bytes = 0;
+		//stats->tx_bytes = 0;
+		//stats->rx_multicast = 0;
+		break;
+	}
+	return 0;
+}
+
+IDM_T kernel_get_ifstats(struct user_net_device_stats *stats, char *target)
+{
+	assertion(-500000, (stats && target));
+
+	FILE *fh;
+	char buf[512];
+	int ret = FAILURE;
+	char *start;
+	struct user_net_device_stats prev = *stats;
+
+	if (!(fh = fopen(IFCONFIG_PATH_PROCNET_DEV, "r"))) {
+		dbgf_sys(DBGT_ERR, "Warning: cannot open %s (%s). Limited output", IFCONFIG_PATH_PROCNET_DEV, strerror(errno));
+		return FAILURE;
+	}
+
+	start = fgets(buf, sizeof buf, fh); /* eat line */
+	start = fgets(buf, sizeof buf, fh);
+
+	int procnetdev_vsn = proc_netdev_version(buf);
+
+	while (fgets(buf, sizeof buf, fh)) {
+		char name[IFNAMSIZ];
+
+		start = proc_get_name(name, buf);
+
+		if (!strcmp(target, name)) {
+			proc_get_dev_fields(start, stats, procnetdev_vsn);
+			dbgf_all(DBGT_INFO, "stats: rx=%llu tx=%llu  buf: %s", stats->rx_packets, stats->tx_packets, start);
+			ret = SUCCESS;
+			break;
+		}
+	}
+
+	if (ferror(fh)) {
+		perror(IFCONFIG_PATH_PROCNET_DEV);
+		ret = FAILURE;
+	}
+
+	fclose(fh);
+
+	dbgf((ret == SUCCESS ? DBGL_ALL : DBGL_CHANGES), (ret == SUCCESS ? DBGT_INFO : DBGT_ERR),
+		"%s %s prev: rx=%llu tx=%llu  curr: rx=%llu tx=%llu", (ret==SUCCESS ? "Succeeded": "Failed"), target,
+		prev.rx_packets, prev.tx_packets, stats->rx_packets, stats->tx_packets);
+
+	return ret;
+}
 
 
 IDM_T kernel_get_route(uint8_t quiet, uint8_t family, uint32_t table, void (*func) (struct nlmsghdr *nh, void *data) )
