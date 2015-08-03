@@ -2572,7 +2572,6 @@ void cache_desc_tlv_hashes(uint8_t op, struct orig_node *on, int8_t t_start, int
 int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 {
         TRACE_FUNCTION_CALL;
-        struct frame_handl *f_handl;
         struct packet_buff *pb = it->pb;
 
         dbgf_all(DBGT_INFO, "%s - frame_pos=%d frame_len=%d", it->caller, it->frames_pos, it->frames_length);
@@ -2643,6 +2642,16 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
                  }
 
 
+
+                it->frame_data_length = f_data_len;
+                it->frame_data = f_data;
+                it->frame_type = f_type;
+                it->is_short_header = f_short;
+                it->handl = NULL;
+                it->frame_msgs_length = 0;
+                it->frame_msgs_fixed = 0;
+                it->msg = NULL;
+
                 if (f_type > it->handl_max || !(it->handls[f_type].rx_frame_handler || it->handls[f_type].rx_msg_handler)) {
 
                         dbgf_sys(DBGT_WARN, "%s - unknown type=%d ! check for updates", it->caller, f_type);
@@ -2651,13 +2660,9 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
                                 return TLV_RX_DATA_FAILURE;
 
                         return TLV_RX_DATA_IGNORED;
-                }
+		}
 
-                f_handl = &it->handls[f_type];
-                it->frame_data_length = f_data_len;
-                it->frame_data = f_data;
-                it->frame_type = f_type;
-                it->is_short_header = f_short;
+		struct frame_handl *f_handl = &it->handls[f_type];
 
                 it->handl = f_handl;
                 it->frame_msgs_length = f_data_len - f_handl->data_header_size;
@@ -3664,7 +3669,9 @@ int32_t opt_show_descriptions(uint8_t cmd, uint8_t _save, struct opt_type *opt,
 
                                         fields_dbg_lines(cn, relevance, it.frame_msgs_length, it.msg,
                                                 it.handl->min_msg_size, it.handl->msg_format);
-                                }
+				} else if (it_result == TLV_RX_DATA_IGNORED) {
+                                        dbg_printf(cn, "\n IGNORED_EXTENSION (frame_type=%d frame_len=%d) ", it.frame_type, it.frame_data_length);
+				}
                         }
                 }
 
