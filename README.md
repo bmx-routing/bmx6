@@ -80,6 +80,27 @@ You can select "luci-app-bmx6" to have a nice web interface for manage and monit
 
 Finally type "make" to build the image.
 
+
+
+## Installing in ArchLinux
+
+Bmx6 is currently in the AUR repository of Archlinux. The current package includes JSON, SMS and Table plugins.
+https://aur4.archlinux.org/packages/bmx6/
+
+You can use the yaourt package manager to install it:
+<pre>
+yaourt -S bmx6
+</pre>
+
+Once installed you can use systemd to start it:
+<pre>
+systemctl start bmx6
+</pre>
+
+Remember to vote the package so it might be included into the officialy community repository of ArchLinux!
+
+
+
 ## Usage (hello mesh)
 
 ### Starting
