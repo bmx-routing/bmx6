@@ -113,28 +113,46 @@ root@mlc1001:~# bmx6 dev=eth1
 
 However, to let this simple command work as expected also check the following basic requirements:
 
-* bmx6 must be executed in root context (with super user permissions). If you are not already root, prepend all commands with sudo (eg: sudo bmx6 dev=eth1 ).
+* `bmx6` must be executed in root context (with super user permissions). If you are not already root, prepend all commands with sudo (eg: `sudo bmx6 dev=eth1` ).
 
-* NO IP address needs to be configured. By default bmx6 assumes IPv6 and autoconfigures an ULA based IPv6 address for each interface based on the MAC address of the device. Just, the interfaces must be UP. The linux ip command can do this for you (eg: ip link set wlan0 up ). Also, if you are using a wireless interface, the wireless interface settings must be set correctly so that link-layer connectivity is given with bmx6 daemons running on other nodes (computers). The good old iwconfig command may help to achieve that. For example: <pre> iwconfig wlan0 mode ad-hoc ap 02:ca:ff:ee:ba:be channel 11 essid my-mesh-network </pre> is a typical configuration for a wireless mesh setup.
+* No IP address needs to be configured. By default bmx6 assumes IPv6
+  and autoconfigures a [ULA](http://www.wikipedia.com)-based IPv6
+  address for each interface based on the MAC address of the
+  device. The only pre-requisite is that the interfaces must be in the
+  `up` state, E.G.: `ip link set wlan0 up`. 
 
-* Bmx6 (by default) works in daemon mode, thus sends itself to background and gives back a prompt. To let it run in foreground specify a debug level with the startup command like: <pre> bmx6 debug=0 dev=eth1 </pre>. Of course you may need to kill a previously started bmx6 daemon beforehand  ( killall bmx6 )
+  If you are using a wireless interface, the interface settings must
+  have been configured using `iwconfig` to communicate with bmx6
+  daemons running on other nodes. This is a typical configuration for
+  a wireless mesh setup: <pre>iwconfig wlan0 mode ad-hoc ap 02:ca:ff:ee:ba:be channel 11 essid my-mesh-network</pre>
+
+* Bmx6 (by default) works in daemon mode, thus sends itself to background and gives back a prompt. To let it run in foreground specify a debug level with the startup command like: <pre> bmx6 debug=0 dev=eth1 </pre> Of course, you may need to kill a previously started bmx6 daemon beforehand  (`killall bmx6`)
 
 If everything went fine bmx6 is running now, searches for neighboring bmx6 daemons via the configured interface (link), and coordinates with them to learn about existence-of and routes-to all other bmx6 nodes in the network.
 
 
-### Accessing Protocol Events, Status, and Network Information¶
+### Monitoring bmx6 ###
 
-To access debug and status information of the bmx6 daemon which has just been started, a second bmx6 process can be launched in client mode (with the `--connect` or `-c` parameter) to connect to the main bmx6 daemon and retrieve the desired information.
+To access debug and status information of a running bmx6 daemon, a
+second bmx6 process can be launched in client mode (with the
+`--connect` or `-c` parameter) to connect to the main bmx6 daemon and
+retrieve the desired information.
 
-In the following, a few example will be discussed. Continuous debug levels with different verbosity and scope are accessible with the `--debug` or `-d` parameter.
+In the following, a few examples will be discussed. Debug levels with
+different verbosity and scope are accessible with the `--debug` or
+`-d` parameter.
 
 * Debug level 0 only reports critical events
 * Debug level 3 reports relevant changes and
 * Debug level 4 reports everything.
 * Debug level 12 dump in and outgoing protocol traffic
 
-Eg.: `bmx6 -cd3` connects a bmx6 client process to debug-level 3 of the main daemon and logs the output stdout until terminated with `ctrl-c`
-Status, network, and statistic information are accessible with dedicated parameters:
+For example, `bmx6 -cd3` runs a bmx6 client process at debug level 3,
+connected to the main daemon and logs the output to stdout until
+terminated with `ctrl-c`.
+
+Status, network, and statistic information are also accessible via
+their own parameters:
 
 * `status`
 * `interfaces`
@@ -142,7 +160,7 @@ Status, network, and statistic information are accessible with dedicated paramet
 * `originators`
 * `descriptions`, plus optional sub-parameters for filtering
 * `tunnels`
-* `traffic=DEV` where DEV:= all or eth1, ....
+* `traffic=DEV` where DEV:=`all`, `eth1`, etc.
 
 <pre>
 root@mlc1001:~# bmx6 -c status
@@ -150,7 +168,12 @@ version        compatibility codeVersion globalId                     primaryIp 
 BMX6-0.1-alpha 16            9           mlc1001.7A7422752001EC4AC4C8 fd66:66:66:0:a2cd:efff:fe10:101 24100101  0:00:40:37 0.1 4
 </pre>
 
-So apart from version, compatibility number, and code, the status reveals the daemon's [Global ID](wiki#global-id) and [Local ID](wiki#local-id), its primary (self-configured) IPv6 address, the time since when it is running (40 minutes), its current cpu consumption (0.1%) and the total number of 4 learned nodes in the network (including itself).
+So apart from version, compatibility number, and code, the status
+reveals the daemon's [Global ID](wiki#global-id) and
+[Local ID](wiki#local-id), its primary (self-configured) IPv6 address,
+the elapsed time since it was started (40 minutes), its current cpu
+consumption (0.1%), and the total number of learned nodes in the
+network (4, including itself).
 
 These desired types can be combined. Also the above given example shows kind of shortcut.
 The long argument would be:
@@ -176,13 +199,19 @@ mlc1002.91DCF042934B5913BB00 0       fd66:66:66:0:a2cd:efff:fe10:201 1      fe80
 mlc1003.09E796BC491D386248C3 0       fd66:66:66:0:a2cd:efff:fe10:301 1      fe80::a2cd:efff:fe10:201 eth1   576M   22       3
 </pre>
 
-Only if relevant information for a requested type is available it will be shown.
-In this example no tunnels are configured nor offered by other nodes and therefore no tunnel information is shown.
+Only if relevant information exists for a requested type is available
+will it be shown.  In this example no tunnels are configured locally
+nor are any tunnels offered by other nodes, so no tunnel information
+is shown.
 
-The loop argument can be prepended to the connect argument to continuously show the requested information.
-Many of the long arguments are usable via a short notation, like `l` for `loop`, `c` for `connect`, `s` for `show`, `d` for `debug`.
-And there is another shortcut summarizing my current favorite information types via debug level 8
-The following commands do the same as above: bmx6 -lc status interfaces links originators tunnels or just `bmx6 -lcd8` .
+The `loop` argument can be prepended to the connect argument to
+continuously show the requested information.  Many of the long
+arguments are available via a short notation, like `l` for `loop`, `c`
+for `connect`, `s` for `show`, `d` for `debug`.  And there is another
+shortcut summarizing my current favorite information types via debug
+level 8 The following commands do the same as above: `bmx6 -lc status
+interfaces links originators tunnels` or simply `bmx6 -lcd8`.
+
 Description of the provided info:
 
     interfaces: Followed by one line per configured interface
@@ -216,22 +245,24 @@ Description of the provided info:
 
 Quick summary of provided info:
 
-* Node mlc1001 uses one wired interface (eth1) which is up and actively used for meshing.
-* Node mlc1001 got aware of 2 neighbors and 4 nodes (originators) including itself.
-* The link qualities (rx and tx rate) to its neighbors are perfect (100%) and actively used (bestTxLink)
-* Routes to nodes mlc1000 and mlc1002 are via interface eth1 and directly to the neighbor's link-local address with a metric of 999M (nearly maximum tx/rx rate of the configured interface)
-* Route to node mlc1003 is setup via interface eth1 and via the link-local address of neighbor mlc1002 (at least two hops to the destination node).
+* Node `mlc1001` uses one wired interface (eth1) which is up and actively used for meshing.
+* Node `mlc1001` is aware of 2 neighbors and 4 nodes (originators) including itself.
+* The link quality metrics (rx and tx rate) to its neighbors are perfect (100%) and actively used (bestTxLink)
+* Routes to nodes `mlc1000` and `mlc1002` are via interface `eth1`, and directly to the neighbor's link-local address with a metric of 999M (nearly maximum tx/rx rate of the configured interface)
+* The route to node `mlc1003` also uses interface `eth1`, but via the intermediate link-local address of neighbor `mlc1002` (at least two hops to the destination node).
 
-The following links of the total network topology can be guessed from this information (further links may exist):
+The following network topology can be deduced from this information (further links may exist):
 <pre>
-mlc1000 --- mlc1001 --- mlc1002 - - - mlc1003
+mlc1000  mlc1001  mlc1002 - - - mlc1003
+   |        |        |
+   +--------+--------+
 </pre>
 
-### Simple Ping Test ###
+### Simple Network Test ###
 
-This could be verified using traceroute6 towards the primary IP of the other nodes.
+The above topology can be verified using `traceroute6` specifying the primary IP address of the other nodes.
 
-To mlc1000's primary IP fd66:66:66:0:a2cd:efff:fe10:1 shows one hop:
+A ping to mlc1000's primary IP fd66:66:66:0:a2cd:efff:fe10:1 shows one hop:
 
 <pre>
 root@mlc1001:~# traceroute6 -n -q 1 fd66:66:66:0:a2cd:efff:fe10:1
