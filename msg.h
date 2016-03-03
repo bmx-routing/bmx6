@@ -708,6 +708,7 @@ struct msg_ogm_ack {
 #define BMX_DSC_TLV_TUN6IN6_NET_ADV     0x0A
 #define BMX_DSC_TLV_TUN6_MAX            0x0A
 
+#define BMX_DSC_TLV_TOPOLOGY  0x0F
 #define BMX_DSC_TLV_JSON_SMS    0x10
 #define BMX_DSC_TLV_MAX_KNOWN    0x10
 #define BMX_DSC_TLV_MAX         (FRAME_TYPE_ARRSZ-1)

@@ -509,14 +509,15 @@ struct metric_record {
 #define GLOBAL_ID_PKID_RAND_POS (GLOBAL_ID_PKID_LEN / 2)
 #define GLOBAL_ID_PKID_RAND_LEN (GLOBAL_ID_PKID_LEN / 2)
 
+typedef union {
+	uint8_t u8[GLOBAL_ID_PKID_LEN];
+	uint16_t u16[GLOBAL_ID_PKID_LEN / sizeof(uint16_t)];
+	uint32_t u32[GLOBAL_ID_PKID_LEN / sizeof(uint32_t)];
+} PKID_T;
 
 struct GLOBAL_ID {
 	char    name[GLOBAL_ID_NAME_LEN];
-	union {
-		uint8_t u8[GLOBAL_ID_PKID_LEN];
-		uint16_t u16[GLOBAL_ID_PKID_LEN / sizeof(uint16_t)];
-		uint32_t u32[GLOBAL_ID_PKID_LEN / sizeof(uint32_t)];
-	} pkid;
+	PKID_T pkid;
 } __attribute__((packed));
 
 typedef struct GLOBAL_ID GLOBAL_ID_T;
