@@ -2155,7 +2155,7 @@ void dev_reconfigure_soft(struct dev_node *dev)
         assertion(-500615, IMPLIES(dev->linklayer == TYP_DEV_LL_LO, dev->if_global_addr));
         
         if (!initializing) {
-                dbgf_sys(DBGT_INFO, "%s soft interface configuration changed", dev->label_cfg.str);
+                dbgf_track(DBGT_INFO, "%s soft interface configuration changed", dev->label_cfg.str);
         }
 
         assertion(-501029, (dev->linklayer == TYP_DEV_LL_WIFI || dev->linklayer == TYP_DEV_LL_LAN || dev->linklayer == TYP_DEV_LL_LO));
@@ -2545,7 +2545,7 @@ void dev_activate( struct dev_node *dev )
         assertion(-500593, (AF_CFG == dev->if_llocal_addr->ifa.ifa_family));
         assertion(-500599, (is_ip_set(&dev->if_llocal_addr->ip_addr) && dev->if_llocal_addr->ifa.ifa_prefixlen));
 
-        dbgf_sys(DBGT_WARN, "%s=%s", ARG_DEV, dev->label_cfg.str);
+        dbgf_track(DBGT_WARN, "%s=%s", ARG_DEV, dev->label_cfg.str);
 
 	if ( wordsEqual( DEV_LO, dev->name_phy_cfg.str ) ) {
 
@@ -3014,7 +3014,7 @@ void dev_if_fix(void)
                 if (dev->if_llocal_addr) {
                         dev->if_llocal_addr->dev = dev;
                 } else {
-                        dbgf_mute(30, DBGL_SYS, DBGT_ERR, "No link-local IP for %s=%s !", ARG_DEV, dev->label_cfg.str);
+                        dbgf_mute(30, DBGL_SYS, DBGT_WARN, "No link-local IP for %s=%s !", ARG_DEV, dev->label_cfg.str);
                 }
 
                 if (dev->if_global_addr && dev->if_llocal_addr) {
@@ -3028,7 +3028,7 @@ void dev_if_fix(void)
                 } else {
                         if (/*dev == primary_dev_cfg ||*/ dev->announce) {
 
-                                dbgf_mute(30, DBGL_SYS, DBGT_ERR,
+                                dbgf_mute(30, DBGL_CHANGES, DBGT_WARN,
                                         "No global IP for %s=%s ! DEACTIVATING !!!", ARG_DEV, dev->label_cfg.str);
 
                                 if (dev->if_llocal_addr) {
@@ -3064,7 +3064,7 @@ static void dev_check(void *kernel_ip_config_changed)
 
                 if (dev->hard_conf_changed && dev->active) {
 
-                        dbgf_sys(DBGT_WARN, "detected changed but used %sprimary dev=%s ! Deactivating now...",
+                        dbgf_track(DBGT_WARN, "detected changed but used %sprimary dev=%s ! Deactivating now...",
                                 (dev == primary_dev ? "" : "non-"), dev->label_cfg.str);
 
                         dev_deactivate(dev);
@@ -3124,7 +3124,7 @@ static void dev_check(void *kernel_ip_config_changed)
 
                         } else  {
 
-                                dbgf_sys(DBGT_WARN, "detected valid but disabled dev=%s ! Activating now...",
+                                dbgf_track(DBGT_WARN, "detected valid but disabled dev=%s ! Activating now...",
                                         dev->label_cfg.str);
 
                                 dev_activate(dev);
@@ -3133,7 +3133,7 @@ static void dev_check(void *kernel_ip_config_changed)
 
 
                 if (!dev->active) {
-                        dbgf_sys(DBGT_WARN, "not using interface %s (retrying later): %s %s ila=%d iln=%d",
+                        dbgf_track(DBGT_WARN, "not using interface %s (retrying later): %s %s ila=%d iln=%d",
                                 dev->label_cfg.str, iff_up ? "UP" : "DOWN",
                                 dev->hard_conf_changed ? "CHANGED" : "UNCHANGED",
                                 dev->if_llocal_addr ? 1 : 0, dev->if_llocal_addr && dev->if_llocal_addr->iln ? 1 : 0);
@@ -3283,7 +3283,7 @@ int register_netlink_event_hook(uint32_t nlgroups, int buffsize, void (*cb_fd_ha
 		return -1;
 	}
 
-	dbgf_sys(DBGT_ERR, "setsockopts buffsize from=%d to=%d now=%d", oldBuff, buffsize, newBuff);
+	dbgf_track(DBGT_INFO, "setsockopts buffsize from=%d to=%d now=%d", oldBuff, buffsize, newBuff);
 
 
 	set_fd_hook(rtevent_sk, cb_fd_handler, ADD);
