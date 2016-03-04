@@ -90,9 +90,8 @@ void redist_table_routes(IDM_T forceChanged)
 	while ((rin=avl_iterate_item(&redist_in_tree, &an)))
 		rin->old = 1;
 
-	dbgf(forceChanged ? DBGL_SYS : DBGL_CHANGES, DBGT_INFO, " %sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
-		forceChanged ? "" : "UN",
-		redist_out_tree.items, redist_in_tree.items, redist_opt_tree.items, table_net_adv_list.items);
+	dbgf_track(DBGT_INFO, " %sCHANGED out.items=%d in.items=%d opt.items=%d net_advs=%d",
+		forceChanged ? "" : "UN", redist_out_tree.items, redist_in_tree.items, redist_opt_tree.items, table_net_adv_list.items);
 }
 
 
@@ -211,7 +210,7 @@ int32_t sync_redist_routes(IDM_T cleanup, IDM_T resync)
 
 	} else if (resync) {
 
-		dbgf_sys(DBGT_ERR, "rt-events out of sync. Trying to resync...");
+		dbgf_sys(DBGT_WARN, "rt-events out of sync. Trying to resync...");
 
 		rtevent_sk = unregister_netlink_event_hook(rtevent_sk, recv_rtevent_netlink_sk);
 
