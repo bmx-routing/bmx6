@@ -108,7 +108,7 @@ Remember to vote the package so it might be included into the officialy communit
 In the most simple configuration, the only required parameter are the interfaces names that should be used for meshing.
 The following example starts bmx6 on interface wlan0:
 <pre>
-root@mlc1001:~# bmx6 dev=eth1
+root@mlc1001:~# bmx6 dev=wlan0
 </pre>
 
 However, to let this simple command work as expected also check the following basic requirements:
