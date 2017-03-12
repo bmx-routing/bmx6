@@ -932,10 +932,10 @@ void register_option(struct opt_type *opt, const char * category_name)
 
         assertion_dbg(-501267,
                 !get_option((opt->parent_name ? get_option(NULL, NO, opt->parent_name) : NULL), NO, opt->name),
-                "%s", opt->name);
+                "name=%s parent=%s", opt->name, opt->parent_name);
         assertion_dbg(-501268, IMPLIES(opt->short_name,
                 !get_option((opt->parent_name ? get_option(NULL, NO, opt->parent_name) : NULL), YES, &opt->short_name)),
-                "%s", opt->name);
+                "name=%s parent=%s", opt->name, opt->parent_name);
 
 	// arg_t A_PS0 with no function can only be YES/NO:
         assertion(-500111, IMPLIES(opt->opt_t == A_PS0 && opt->ival, opt->imin == NO && opt->imax == YES && opt->idef == NO));
@@ -1153,7 +1153,7 @@ struct opt_type *get_option(struct opt_type *parent_opt, uint8_t short_opt, char
 	
 get_option_failure:
 	
-	dbgf_all( DBGT_WARN, "Failed! called with parent %s, opt %c %s, len %d",
+	dbgf_track( DBGT_WARN, "Failed! called with parent %s, opt %c %s, len %d",
 	          parent_opt?"YES":"NO", (short_opt ? s[0]: '-'), (!short_opt ? s : "-"), len );
 	
 	return NULL;
