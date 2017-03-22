@@ -697,7 +697,7 @@ void create_ogm_aggregation(void)
                                 if (ogm_iid_jumps == OGM_JUMPS_PER_AGGREGATION)
                                         break;
 
-                                dbgf((ogm_iid_jumps > 1) ? DBGL_SYS : DBGL_ALL, DBGT_INFO,
+                                dbgf_mute(8, (ogm_iid_jumps > 1) ? DBGL_SYS : DBGL_ALL, DBGT_INFO,
                                         "IID jump %d from %d to %d", ogm_iid_jumps, ogm_iid, dhn->myIID4orig);
 
                                 ogm_iid = dhn->myIID4orig;
