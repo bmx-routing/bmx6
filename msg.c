@@ -276,8 +276,9 @@ IDM_T process_description_tlvs(struct packet_buff *pb, struct orig_node *on, str
                 .frames_length = dsc_tlvs_len, .custom_data = custom
         };
 
-        dbgf_track(DBGT_INFO, "op=%s id=%s dsc_sqn=%d size=%d ",
-                tlv_op_str(op), globalIdAsString(&desc->globalId), ntohs(desc->descSqn), dsc_tlvs_len);
+        dbgf_track(DBGT_INFO, "op=%s id=%s cv=%d revision=%d dsc_sqn=%X size=%d, filter=%d",
+                tlv_op_str(op), globalIdAsString(&desc->globalId), desc->comp_version, ntohs(desc->revision),
+		ntohl(desc->descSqn), dsc_tlvs_len, filter);
 
 
         while ((tlv_result = rx_frame_iterate(&it)) > TLV_RX_DATA_DONE);
@@ -1842,6 +1843,7 @@ int32_t tx_frame_problem_adv(struct tx_frame_iterator *it)
         dbgf_all(DBGT_INFO, "FRAME_TYPE_PROBLEM_CODE=%d dev_id=0x%X", ttn->task.u16, ttn->task.u32);
 
         if (ttn->task.u16 == FRAME_TYPE_PROBLEM_CODE_DUP_LINK_ID) {
+		//TODOCV18: purge:
                 
                 adv->reserved = 0;
                 adv->code = ttn->task.u16;
@@ -1867,6 +1869,7 @@ int32_t rx_frame_problem_adv(struct rx_frame_iterator *it)
         struct msg_problem_adv *adv = (struct msg_problem_adv *) it->frame_data;
 
         if (adv->code == FRAME_TYPE_PROBLEM_CODE_DUP_LINK_ID) {
+		//TODOCV18: purge:
 
                 if (it->frame_data_length != sizeof (struct msg_problem_adv)) {
 
@@ -2495,79 +2498,93 @@ int32_t rx_msg_hello_adv(struct rx_frame_iterator *it)
         return sizeof (struct msg_hello_adv);
 }
 
+int32_t get_desc_frame_data(uint8_t **frame_data, uint8_t *desc_ext_data, int32_t desc_ext_len, uint8_t frame_type) {
 
-void cache_desc_tlv_hashes(uint8_t op, struct orig_node *on, int8_t t_start, int8_t t, uint8_t *t_data, int32_t t_data_len)
-{
-        assertion(-501356, ((op == TLV_OP_DEL || op == TLV_OP_TEST || op == TLV_OP_NEW)));
-        assertion(-501357, (t_start <= t));
+//	assertion(-500000, (frame_type != BMX_DSC_TLV_REF_ADV));
 
-        int8_t hn_type;
+	int32_t frame_data_len = 0;
 
-	dbgf_track(DBGT_INFO, "op=%s on=%s t_start=%d t_end=%d t_data_len=%d data=%s",
-                tlv_op_str(op), on?globalIdAsString(&on->global_id):"???", t_start, t, t_data_len,
-		t_data&&t_data_len?memAsHexString(t_data, t_data_len):"");
+	struct rx_frame_iterator it = {
+                .caller = __FUNCTION__, .on = NULL, .cn = NULL, .op = TLV_OP_PLUGIN_MIN,
+                .handls = description_tlv_handl, .handl_max = BMX_DSC_TLV_MAX,
+                .process_filter = FRAME_TYPE_PROCESS_NONE, .custom_data = NULL,
+                .frame_type = -1,.frames_in = desc_ext_data, .frames_length = desc_ext_len };
 
-        for (hn_type = t_start; hn_type <= t; hn_type++) {
+	int32_t tlv_result;
 
-                struct desc_tlv_hash_node * hn = avl_find_item(&on->desc_tlv_hash_tree, &hn_type);
+	if (frame_data)
+		*frame_data = NULL;
 
-		dbgf_track(DBGT_INFO, "hn_type=%d hn=%s: prev=%X curr=%X test=%X chngd=%d", hn_type, hn?"Y":"N",
-			hn?hn->prev_hash.h.u32[0]:0, hn?hn->curr_hash.h.u32[0]:0, hn?hn->test_hash.h.u32[0]:0,
-			hn?hn->test_changed:-1);
+        while ((tlv_result = rx_frame_iterate(&it)) > TLV_RX_DATA_DONE) {
 
-                if (op == TLV_OP_TEST) {
+		if ( it.frame_type == frame_type
+//			|| (it.frame_type == BMX_DSC_TLV_REF_ADV && ((struct description_hdr_ref*)(it.frame_data))->final_type == frame_type)
+			) {
 
-                        if (!hn && t_data && hn_type == t) {
-                                hn = debugMallocReset(sizeof (struct desc_tlv_hash_node), -300451);
-                                hn->tlv_type = t;
-                                avl_insert(&on->desc_tlv_hash_tree, hn, -300452);
-                        }
+			if( frame_data_len )
+				return -1;
 
-                        if (hn) {
-                                if (t_data && hn_type == t) {
-                                        ShaUpdate(&bmx_sha, (byte*) t_data, t_data_len);
-                                        ShaFinal(&bmx_sha, (byte*) & hn->test_hash);
-                                } else {
-                                        memset(&hn->test_hash, 0, sizeof (SHA1_T));
-                                }
+			if (frame_data)
+				*frame_data = it.frame_data;
 
-                                hn->test_changed = memcmp(&hn->curr_hash, &hn->test_hash, sizeof (SHA1_T)) ? 1 : 0;
-                        }
+			frame_data_len = it.frame_data_length;
+		}
+	}
 
-                } else if (op == TLV_OP_NEW) {
-
-
-                        assertion(-501358, IMPLIES(t_data && hn_type == t, hn));
-                        assertion(-501359, IMPLIES(hn && hn_type != t, !is_zero(&hn->curr_hash, sizeof (SHA1_T)) && is_zero(&hn->test_hash, sizeof (SHA1_T))));
-
-                        if (hn) {
-                                if (hn->test_changed) {
-                                        hn->prev_hash = hn->curr_hash;
-                                        hn->curr_hash = hn->test_hash;
-                                        hn->prev_changed = hn->test_changed;
-                                }
-
-                                if (hn_type != t) {
-                                        // remove otherwise forgotten tlv
-                                        int tlv_result = process_description_tlvs(NULL, on, on->desc, TLV_OP_DEL, hn_type, NULL, NULL);
-                                        assertion(-501360, (tlv_result == TLV_RX_DATA_DONE));
-                                }
-                        }
-                }
-
-                if (hn) {
-                        if (op == TLV_OP_DEL || (
-                                is_zero(&hn->test_hash, sizeof (SHA1_T)) &&
-                                is_zero(&hn->curr_hash, sizeof (SHA1_T)) &&
-                                is_zero(&hn->prev_hash, sizeof (SHA1_T))
-                                )) {
-
-                                avl_remove(&on->desc_tlv_hash_tree, &hn->tlv_type, -300453);
-                                debugFree(hn, -300454);
-                        }
-                }
-        }
+	return frame_data_len;
 }
+
+IDM_T desc_frame_changed(  struct rx_frame_iterator *it, uint8_t f_type ) {
+
+	uint8_t *fs_in_new = it->frames_in;
+	int32_t fs_len_new = it->frames_length;
+	uint8_t *fs_in_old = (((uint8_t*) it->on->desc) + sizeof (struct description));
+	int32_t fs_len_old = ntohs(it->on->desc->extensionLen);
+
+	uint8_t *fdp_old, *fdp_new;
+	
+
+	int32_t fdl_old = get_desc_frame_data( &fdp_old, fs_in_old, fs_len_old, f_type);
+
+	assertion(-500000, (fdl_old >= 0));
+
+
+	int32_t fdl_new = get_desc_frame_data( &fdp_new, fs_in_new, fs_len_new, f_type);
+
+	assertion(-500000, (fdl_new >= 0));
+
+
+	uint8_t changed = ( fdl_new != fdl_old || (fdl_new && memcmp(fdp_new, fdp_old, fdl_old)) );
+
+	dbgf_track(DBGT_INFO, "orig=%s %s type=%d (%s) old_len=%d new_len=%d",
+	           globalIdAsString(&it->on->global_id), changed ? "  CHANGED" : "UNCHANGED",
+	           f_type, it->handls[f_type].name, fdl_old, fdl_new);
+
+	if (changed)
+		return YES;
+	else
+		return NO;
+}
+
+
+STATIC_FUNC
+void process_description_tlvs_del( struct orig_node *on, uint8_t ft_start, uint8_t ft_end ) {
+
+	int8_t t;
+
+	for (t = ft_start; t <= ft_end; t++) {
+
+		int32_t df_len = get_desc_frame_data(NULL, ((uint8_t*)(on->desc)) + sizeof(struct description), ntohs(on->desc->extensionLen), t);
+
+		assertion(-500000, (df_len >= 0));
+
+		if (df_len > 0) {
+			int tlv_result = process_description_tlvs(NULL, on, on->desc, TLV_OP_DEL, t, NULL, NULL);
+			assertion(-501360, (tlv_result == TLV_RX_DATA_DONE));
+		}
+	}
+}
+
 
 int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 {
@@ -2576,13 +2593,13 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 
         dbgf_all(DBGT_INFO, "%s - frame_pos=%d frame_len=%d", it->caller, it->frames_pos, it->frames_length);
 
-        if (it->frames_pos == it->frames_length) {
+        if (it->frames_pos == it->frames_length ) {
+		
+		if ( it->on && it->on->added && it->op == TLV_OP_NEW && it->process_filter == FRAME_TYPE_PROCESS_ALL &&
+			it->frame_type < it->handl_max ) {
 
-                if (it->on && it->process_filter == FRAME_TYPE_PROCESS_ALL && it->frame_type < it->handl_max &&
-                        (it->op == TLV_OP_DEL || it->op == TLV_OP_TEST || it->op == TLV_OP_NEW)) {
-
-                        cache_desc_tlv_hashes(it->op, it->on, (it->frame_type + 1), it->handl_max, NULL, 0);
-                 }
+			process_description_tlvs_del( it->on, (it->frame_type + 1), it->handl_max );
+		}
 
                 dbgf_all(DBGT_INFO, "%s - frames_pos=%d frames_length=%d : DONE", it->caller, it->frames_pos, it->frames_length);
                 return TLV_RX_DATA_DONE;
@@ -2631,14 +2648,10 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
                 }
 
 
-                if (it->on && (it->op == TLV_OP_DEL || it->op == TLV_OP_TEST || it->op == TLV_OP_NEW)) {
+                if (it->on && it->on->added && it->op == TLV_OP_NEW && it->process_filter == FRAME_TYPE_PROCESS_ALL &&
+			it->frame_type + 1 < f_type) {
 
-			if (it->process_filter == FRAME_TYPE_PROCESS_ALL) {
-				cache_desc_tlv_hashes(it->op, it->on, (it->frame_type + 1), f_type, f_data, f_data_len);
-			} else if (it->process_filter == f_type ) {
-				dbgf_track(DBGT_WARN, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-				cache_desc_tlv_hashes(it->op, it->on, f_type, f_type, f_data, f_data_len);
-			}
+			process_description_tlvs_del( it->on, (it->frame_type + 1), (f_type - 1) );
                  }
 
 
@@ -2654,7 +2667,7 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 
                 if (f_type > it->handl_max || !(it->handls[f_type].rx_frame_handler || it->handls[f_type].rx_msg_handler)) {
 
-                        dbgf_sys(DBGT_WARN, "%s - unknown type=%d ! check for updates", it->caller, f_type);
+                        dbgf_mute(50, DBGL_SYS, DBGT_WARN, "%s - unknown type=%d ! check for updates", it->caller, f_type);
 
                         if (f_type > it->handl_max || fhs->is_relevant)
                                 return TLV_RX_DATA_FAILURE;
@@ -2688,21 +2701,18 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
                         dbgf_sys(DBGT_WARN, "%s - nonmaching length=%d for type=%s", it->caller, f_len, f_handl->name);
                         return TLV_RX_DATA_FAILURE;
 
-                } else if (f_handl->is_relevant != fhs->is_relevant) {
+                } else if (f_handl->family && f_handl->family != AF_CFG) {
 
-                        dbgf_sys(DBGT_ERR, "%s - type=%s frame_length=%d from %s, signals %s but known as %s",
+                        return f_handl->is_relevant ? TLV_RX_DATA_FAILURE : TLV_RX_DATA_IGNORED;
+                }
+
+                if (f_handl->is_relevant != fhs->is_relevant) {
+
+                        dbgf_mute(90, DBGL_CHANGES, DBGT_ERR, "%s - type=%s frame_length=%d from %s, signals %s but known as %s",
                                 it->caller, f_handl->name, f_len, pb ? pb->i.llip_str : DBG_NIL,
                                 fhs->is_relevant ? "RELEVANT" : "IRRELEVANT",
                                 f_handl->is_relevant ? "RELEVANT" : "IRRELEVANT");
-
-
-                        return fhs->is_relevant ? TLV_RX_DATA_FAILURE : TLV_RX_DATA_BLOCKED;
-
-                } else if (f_handl->family && f_handl->family != AF_CFG) {
-
-                        return fhs->is_relevant ? TLV_RX_DATA_FAILURE : TLV_RX_DATA_IGNORED;
-                }
-
+		}
 
                 if (!(it->process_filter == FRAME_TYPE_PROCESS_ALL || it->process_filter == f_type)) {
 
@@ -3256,11 +3266,11 @@ void tx_packet(void *devp)
 
                         memset(packet_hdr, 0, sizeof (struct packet_header));
 
-                        packet_hdr->bmx_version = COMPATIBILITY_VERSION;
+                        packet_hdr->comp_version = COMPATIBILITY_VERSION;
                         packet_hdr->pkt_length = htons(pb.i.total_length);
                         packet_hdr->transmitterIID = htons(myIID4me);
                         packet_hdr->link_adv_sqn = htons(my_link_adv_sqn);
-                        packet_hdr->pkt_sqn = htonl(++my_packet_sqn);
+                        packet_hdr->pkt_sqn = htonl(++my_packet_sqn); //TODOCV18: remove
                         packet_hdr->local_id = my_local_id;
                         packet_hdr->dev_idx = dev->llip_key.idx;
 
@@ -3368,8 +3378,8 @@ IDM_T validate_description(struct description *desc)
 
         if (
                 //validate_param(desc->reservedTtl, MIN_TTL, MAX_TTL, ARG_TTL) || // may be reused for other purpose (eg as capabilities)
+                validate_param(desc->comp_version, 0/*(COMPATIBILITY_VERSION-1)*/, (COMPATIBILITY_VERSION+1), "compatibilty version") || //TODOCV18: check exactly !!
                 validate_param(ntohs(desc->ogmSqnRange), _MIN_OGM_SQN_RANGE, _MAX_OGM_SQN_RANGE, ARG_OGM_SQN_RANGE) ||
-                validate_param(ntohs(desc->txInterval), MIN_TX_INTERVAL, MAX_TX_INTERVAL, ARG_TX_INTERVAL) ||
                 0
                 ) {
 
@@ -3392,29 +3402,21 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         if ( validate_description( desc ) != SUCCESS )
                 goto process_desc0_error;
 
+	DESC_SQN_T descSqn = ntohl(desc->descSqn);
 
         if ((on = avl_find_item(&orig_tree, &desc->globalId))) {
 
-                dbgf_track(DBGT_INFO, "descSQN=%d (old_sqn=%d) from id=%s via_dev=%s via_ip=%s",
-                        ntohs(desc->descSqn), on->descSqn, globalIdAsString(&desc->globalId), pb->i.iif->label_cfg.str, pb->i.llip_str);
+                dbgf_track(DBGT_INFO, "descSQN=%d (old_sqn=%d) from id=%s cv=%d via_dev=%s via_ip=%s",
+                        descSqn, on->descSqn, globalIdAsString(&desc->globalId),
+			desc->comp_version, pb->i.iif->label_cfg.str, pb->i.llip_str);
 
                 assertion(-500383, (on->dhn));
 
                 if (((TIME_T) (bmx_time - on->dhn->referred_by_me_timestamp)) < (TIME_T) dad_to) {
 
-                        if (((DESC_SQN_MASK)&(ntohs(desc->descSqn) - (on->descSqn + 1))) > DEF_DESCRIPTION_DAD_RANGE) {
+                        if (((DESC_SQN_MASK_OLD)&(descSqn - (on->descSqn + 1))) > DEF_DESCRIPTION_DAD_RANGE) {
 
-                                dbgf_sys(DBGT_ERR, "DAD-Alert: new dsc_sqn %d not > old %d + 1",
-                                        ntohs(desc->descSqn), on->descSqn);
-
-                                goto process_desc0_ignore;
-                        }
-
-                        if (ntohs(desc->descSqn) == ((DESC_SQN_T) (on->descSqn + 1)) &&
-                                UXX_LT(OGM_SQN_MASK, ntohs(desc->ogmSqnMin), (on->ogmSqn_rangeMin + _MAX_OGM_SQN_RANGE))) {
-
-                                dbgf_sys(DBGT_ERR, "DAD-Alert: new ogm_sqn_min %d not > old %d + %d",
-                                        ntohs(desc->ogmSqnMin), on->ogmSqn_rangeMin, _MAX_OGM_SQN_RANGE);
+                                dbgf_sys(DBGT_ERR, "DAD-Alert: new dsc_sqn %d not > old %d + 1",descSqn, on->descSqn);
 
                                 goto process_desc0_ignore;
                         }
@@ -3426,7 +3428,7 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         }
 
         on->updated_timestamp = bmx_time;
-        on->descSqn = ntohs(desc->descSqn);
+        on->descSqn = descSqn;
         on->ogmSqn_rangeMin = ntohs(desc->ogmSqnMin);
         on->ogmSqn_rangeSize = ntohs(desc->ogmSqnRange);
         on->ogmSqn_maxRcvd = (OGM_SQN_MASK & (on->ogmSqn_rangeMin - OGM_SQN_STEP));
@@ -3447,7 +3449,8 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
 
         } else {
 
-                if (on->desc && on->added) {
+                if (on->added) {
+			assertion(-500000, (on->desc));
                         tlv_result = process_description_tlvs(pb, on, on->desc, TLV_OP_DEL, FRAME_TYPE_PROCESS_ALL, NULL, NULL);
                         assertion(-501364, (tlv_result == TLV_RX_DATA_DONE));
                 }
@@ -3459,10 +3462,8 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         }
 
 
-        if (on->desc) {
+        if (on->desc)
                 debugFree(on->desc, -300111);
-        }
-
         on->desc = desc;
         desc = NULL;
 
@@ -3472,12 +3473,12 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         assertion(-500970, (on->dhn->on == on));
         assertion(-500309, (on->dhn == avl_find_item(&dhash_tree, &on->dhn->dhash)));
         assertion(-500310, (on == avl_find_item(&orig_tree, &on->desc->globalId)));
+	assertion(-500000, (on->desc));
 
-        if (on->desc)
-                cb_plugin_hooks(PLUGIN_CB_DESCRIPTION_CREATED, on);
-
+	cb_plugin_hooks(PLUGIN_CB_DESCRIPTION_CREATED, on);
 
         return on->dhn;
+
 
 process_desc0_error:
 
@@ -3533,7 +3534,7 @@ void update_my_description_adv(void)
 
         dsc->ogmSqnMin = htons(self->ogmSqn_rangeMin);
         dsc->ogmSqnRange = htons(self->ogmSqn_rangeSize);
-        dsc->txInterval = htons(my_tx_interval);
+        dsc->capabilities = htons(my_desc_capabilities);
 
         uint32_t rev_u32;
         char rev_string[9];
@@ -3542,8 +3543,8 @@ void update_my_description_adv(void)
         sscanf(rev_string, "%4X", &rev_u32);
 
         dsc->revision = htons(rev_u32);
-        dsc->descSqn = htons(++(self->descSqn));
-        dsc->reservedTtl = my_ttl;
+        dsc->comp_version = COMPATIBILITY_VERSION;
+        dsc->descSqn = htonl(++(self->descSqn));
 
         // add all tlv options:
         

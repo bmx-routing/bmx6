@@ -137,7 +137,7 @@ void dump(struct packet_buff *pb)
         dbgf_dump(DBGT_NONE,
                 "%s       headerVersion=%-2d reserved=%-2X IID=%-5d headerSize=%-4zu",
                 direction == DUMP_DIRECTION_IN ? "in " : "out",
-                phdr->bmx_version, phdr->reserved, ntohs(phdr->transmitterIID), sizeof (struct packet_header));
+                phdr->comp_version, phdr->capabilities, ntohs(phdr->transmitterIID), sizeof (struct packet_header));
 
         (*dev_plugin_data)->tmp_all[direction][DUMP_TYPE_PACKET_HEADER] += (sizeof (struct packet_header) << IMPROVE_ROUNDOFF);
 

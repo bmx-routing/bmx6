@@ -238,7 +238,9 @@ struct float_u8 {
 typedef struct float_u8 FMETRIC_U8_T;
 
 
-
+#define MY_DESC_CAPABILITIES_CV16 0x0200 //capability flag for compatibility with CV16 txInterval field
+#define MY_DESC_CAPABILITIES (MY_DESC_CAPABILITIES_CV16 | 0)
+extern uint16_t my_desc_capabilities;
 
 #define MIN_TX_INTERVAL 35
 #define MAX_TX_INTERVAL 10000  // < U16_MAX due to metricalgo->ogm_interval field
@@ -340,8 +342,6 @@ typedef uint8_t OGM_DEST_T;
 
 
 typedef uint32_t PKT_SQN_T;
-#define PKT_SQN_DAD_RANGE 1000
-#define PKT_SQN_DAD_TOLERANCE 100
 #define PKT_SQN_MAX ((PKT_SQN_T)-1)
 
 
@@ -390,9 +390,10 @@ typedef uint16_t HELLO_SQN_T;
 
 
 // descriptions 
-typedef uint16_t DESC_SQN_T;
-#define DESC_SQN_BIT_SIZE   (16)
-#define DESC_SQN_MASK     ((1<<DESC_SQN_BIT_SIZE)-1)
+typedef uint32_t DESC_SQN_T;
+#define DESC_SQN_BIT_SIZE   (8*sizeof(DESC_SQN_T))
+#define DESC_SQN_MASK       ((DESC_SQN_T)-1)
+#define DESC_SQN_MASK_OLD   ((uint16_t)-1)     //TODOCV18: replace with DESC_SQN_MASK
 #define DESC_SQN_MAX        DESC_SQN_MASK
 
 #define DEF_DESCRIPTION_DAD_RANGE 8192
@@ -416,16 +417,16 @@ typedef uint8_t  FRAME_TYPE_T;
 
 struct packet_header // 17 bytes
 {
-	uint8_t    bmx_version;      //  8
-	uint8_t    reserved;         //  8  reserved
+	uint8_t    comp_version;     //  8
+	uint8_t    capabilities;     //  8  reserved
 	uint16_t   pkt_length; 	     // 16 the relevant data size in bytes (including the bmx_header)
 
 	IID_T      transmitterIID;   // 16 IID of transmitter node
 
 	LINKADV_SQN_T link_adv_sqn;  // 16 used for processing: link_adv, lq_adv, rp_adv, ogm_adv, ogm_ack
 
+	//TODOCV18: merge pkt_sqn and local_id into single uint64_t local_id
 	PKT_SQN_T  pkt_sqn;          // 32
-
 	LOCAL_ID_T local_id;         // 32
 	
 	DEVADV_IDX_T   dev_idx;      //  8
@@ -804,7 +805,6 @@ struct local_node {
 	struct link_dev_node *best_lndev;
 	struct neigh_node *neigh; // to be set when confirmed, use carefully
 
-	PKT_SQN_T packet_sqn;
 	TIME_T packet_time;
 	LINKADV_SQN_T packet_link_sqn_ref; //indicating the maximum existing link_adv_sqn
 
@@ -920,15 +920,6 @@ struct neigh_node {
 extern struct avl_tree orig_tree;
 //extern struct avl_tree blocked_tree;
 
-struct desc_tlv_hash_node {
-        SHA1_T prev_hash;
-        SHA1_T curr_hash;
-        SHA1_T test_hash;
-        uint8_t tlv_type;
-        uint8_t test_changed;
-        uint8_t prev_changed;
-};
-
 
 struct orig_node {
 	// filled in by validate_new_link_desc0():
@@ -937,7 +928,6 @@ struct orig_node {
 
 	struct dhash_node *dhn;
 	struct description *desc;
-	struct avl_tree desc_tlv_hash_tree;
 
 	TIME_T updated_timestamp; // last time this on's desc was succesfully updated
 
@@ -1051,7 +1041,6 @@ struct packet_buff {
 		//filled in by rx_packet()
 		uint32_t rx_counter;
 		IID_T transmittersIID;
-		PKT_SQN_T pkt_sqn;
 		LINKADV_SQN_T link_sqn;
 
 		struct link_node_key link_key;

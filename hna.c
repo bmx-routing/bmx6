@@ -76,9 +76,6 @@ static const struct tun_net_key ZERO_TUN_NET_KEY = {.ton = NULL};
 //static struct net_key tun6_address = ZERO_NET_KEY_INIT;
 //char* tun6_dev = NULL;
 
-IDM_T (*hna_configure_niit4to6) (IDM_T del, struct net_key *key) = NULL;
-IDM_T (*hna_configure_niit6to4) (IDM_T del, struct net_key *key) = NULL;
-
 
 
 IFNAME_T tun_name_prefix = {{DEF_TUN_NAME_PREFIX}};
@@ -488,8 +485,6 @@ void configure_hna(IDM_T del, struct net_key* key, struct orig_node *on, uint8_t
         } else if (on->curr_rt_lndev && !(flags & DESC_MSG_HNA_FLAG_NO_ROUTE)) {
 
                 configure_route(del, on, key);
-                if (hna_configure_niit4to6)
-                        (*hna_configure_niit4to6)(del, key);
         }
 
 
@@ -544,9 +539,7 @@ int process_description_tlv_hna(struct rx_frame_iterator *it)
 
         uint32_t hna_net_curr = 0;
 
-        assertion(-600004, (on != self ||
-                op == TLV_OP_CUSTOM_NIIT6TO4_ADD || op == TLV_OP_CUSTOM_NIIT6TO4_DEL ||
-                op == TLV_OP_CUSTOM_NIIT4TO6_ADD || op == TLV_OP_CUSTOM_NIIT4TO6_DEL));
+        assertion(-600004, (on != self));
 
 
         if (AF_CFG != family) {
@@ -603,17 +596,21 @@ int process_description_tlv_hna(struct rx_frame_iterator *it)
                         // check if node announces the same key twice:
                         uint32_t i;
                         for (i = 0; i < hna_net_curr; i++) {
-                                if (!memcmp(&hna_net_keys[i], &key, sizeof (key))) {
-                                        dbgf_sys(DBGT_ERR, "global_id=%s %s=%s blocked due to duplicate announcement",
-                                                globalIdAsString(&on->global_id), ARG_UHNA, netAsStr(&key));
-                                        return TLV_RX_DATA_BLOCKED;
+				if (is_ip_net_equal(&(hna_net_keys[i].ip), &key.ip, XMIN(hna_net_keys[i].mask, key.mask), AF_CFG)) {
+//                                if (!memcmp(&hna_net_keys[i], &key, sizeof (key))) {
+                                        dbgf_sys(DBGT_ERR, "global_id=%s FAILURE due to overlapping hnas %s %s",
+                                                globalIdAsString(&on->global_id), netAsStr(&hna_net_keys[i]), netAsStr(&key));
+                                        return TLV_RX_DATA_FAILURE;
                                 }
                         }
 
-                        if (hna_net_key_elements < (i + 1))
+                        if (hna_net_key_elements < (i + 1)) {
                                 hna_net_keys = debugRealloc(hna_net_keys, (i + 1) * sizeof (key), -300398);
-                        memcpy(&hna_net_keys[i], &key, sizeof (key));
-                        hna_net_key_elements = (hna_net_curr = (i + 1));
+				hna_net_key_elements = i + 1;
+			}
+                        hna_net_keys[i] = key;
+			hna_net_curr = i + 1;
+                        
                          
 
 
@@ -632,32 +629,16 @@ int process_description_tlv_hna(struct rx_frame_iterator *it)
 
                 } else if (op >= TLV_OP_CUSTOM_MIN) {
 
-                        dbgf_all(DBGT_INFO, "configure_niit... op=%d  global_id=%s blocked=%d",
+                        dbgf_all(DBGT_INFO, "configure TLV_OP_CUSTOM op=%d  global_id=%s blocked=%d",
                                 op, globalIdAsString(&on->global_id), on->blocked);
 
                         if (!on->blocked  && !(flags & DESC_MSG_HNA_FLAG_NO_ROUTE)) {
                                 //ASSERTION(-501314, (avl_find(&global_uhna_tree, &key)));
 
-                                if (op == TLV_OP_CUSTOM_NIIT6TO4_ADD) {
-                                        if (hna_configure_niit6to4)
-                                                (*hna_configure_niit6to4)(ADD, &key);
-                                } else if (op == TLV_OP_CUSTOM_NIIT6TO4_DEL) {
-                                        if (hna_configure_niit6to4)
-                                                (*hna_configure_niit6to4)(DEL, &key);
-                                } else if (op == TLV_OP_CUSTOM_NIIT4TO6_ADD) {
-                                        if (hna_configure_niit4to6)
-                                                (*hna_configure_niit4to6)(ADD, &key);
-                                } else if (op == TLV_OP_CUSTOM_NIIT4TO6_DEL) {
-                                        if (hna_configure_niit4to6)
-                                                (*hna_configure_niit4to6)(DEL, &key);
-                                } else if (op == TLV_OP_CUSTOM_HNA_ROUTE_DEL) {
-                                        if (hna_configure_niit4to6)
-                                                (*hna_configure_niit4to6)(DEL, &key);
+                                if (op == TLV_OP_CUSTOM_HNA_ROUTE_DEL) {
                                         configure_route(DEL, on, &key);
                                 } else if (op == TLV_OP_CUSTOM_HNA_ROUTE_ADD) {
                                         configure_route(ADD, on, &key);
-                                        if (hna_configure_niit4to6)
-                                                (*hna_configure_niit4to6)(ADD, &key);
                                 } else {
                                         assertion(-501315, (NO));
                                 }
@@ -1831,15 +1812,12 @@ int process_description_tlv_tun6_adv(struct rx_frame_iterator *it)
 
         } else if (it->op == TLV_OP_NEW) {
 
-                new_tun6_advs_changed = NO;
+                new_tun6_advs_changed = (it->on->added ? NO : YES);
 
-                if( !is_ip_set(&it->on->primary_ip) ) {
-
-                        if (terminate_tun_out(it->on, NULL, NULL))
-                                eval_tun_bit_tree(NULL);
-
-                        return it->frame_msgs_length;
-                }
+                if (!new_tun6_advs_changed) {
+			if( !is_ip_set(&it->on->primary_ip) )
+				new_tun6_advs_changed = YES;
+		}
 
                 if (!new_tun6_advs_changed) {
                         struct tun_out_key key = set_tun_adv_key(it->on, 0);
@@ -1852,40 +1830,38 @@ int process_description_tlv_tun6_adv(struct rx_frame_iterator *it)
                                         break;
                                 }
                         }
+
+			if ( key.tun6Id != it->frame_msgs_length / it->handl->min_msg_size )
+				new_tun6_advs_changed = YES;
                 }
 
                 
                 if (!new_tun6_advs_changed) {
                         uint8_t t;
-                        uint8_t tlv_types[] = {
-                                BMX_DSC_TLV_TUN6_ADV
-                                ,BMX_DSC_TLV_TUN4IN6_INGRESS_ADV
-                                ,BMX_DSC_TLV_TUN6IN6_INGRESS_ADV
-                                ,BMX_DSC_TLV_TUN4IN6_SRC_ADV
-                                ,BMX_DSC_TLV_TUN6IN6_SRC_ADV
-/*
-                                ,BMX_DSC_TLV_TUN4IN6_NET_ADV
-                                ,BMX_DSC_TLV_TUN6IN6_NET_ADV
-*/
+                        uint8_t tlv_types[] = { BMX_DSC_TLV_TUN6_ADV
+			,BMX_DSC_TLV_TUN4IN6_INGRESS_ADV ,BMX_DSC_TLV_TUN6IN6_INGRESS_ADV
+			,BMX_DSC_TLV_TUN4IN6_SRC_ADV, BMX_DSC_TLV_TUN6IN6_SRC_ADV
+//                      ,BMX_DSC_TLV_TUN4IN6_NET_ADV, BMX_DSC_TLV_TUN6IN6_NET_ADV
                         };
+
                         for (t = 0; t < sizeof (tlv_types); t++) {
 
-                                struct desc_tlv_hash_node * thn;
-
-                                if ((thn = avl_find_item(&it->on->desc_tlv_hash_tree, &tlv_types[t])) && thn->test_changed) {
-                                        new_tun6_advs_changed = YES;
-                                        break;
-                                }
+				if ( desc_frame_changed(it, tlv_types[t]) ) {
+					new_tun6_advs_changed = YES;
+					break;
+				}
                         }
                 }
 
 
-                if (!new_tun6_advs_changed) {
+                if (!new_tun6_advs_changed)
                         return it->frame_msgs_length;
-                } else {
-                        if (terminate_tun_out(it->on, NULL, NULL))
-                                eval_tun_bit_tree(NULL);
-                }
+
+		if (terminate_tun_out(it->on, NULL, NULL))
+			eval_tun_bit_tree(NULL);
+
+		if ( !is_ip_set(&it->on->primary_ip) )
+			return it->frame_msgs_length;
         }
 
 
@@ -2221,10 +2197,7 @@ int process_description_tlv_tunXin6_net_adv(struct rx_frame_iterator *it)
 
         if (it->op == TLV_OP_NEW) {
 
-                struct desc_tlv_hash_node *thn = avl_find_item(&it->on->desc_tlv_hash_tree, &it->frame_type);
-                assertion(-501388, (thn));
-
-                if (!new_tun6_advs_changed && !thn->prev_changed)
+		if ( !new_tun6_advs_changed && !desc_frame_changed( it, it->frame_type ) )
                         return it->frame_msgs_length;
         }
 
@@ -3578,7 +3551,6 @@ int32_t hna_init( void )
         memset(&tlv_handl, 0, sizeof (tlv_handl));
         tlv_handl.min_msg_size = sizeof (struct description_msg_tun6_adv);
         tlv_handl.fixed_msg_size = 1;
-        tlv_handl.is_relevant = 1;
         tlv_handl.family = AF_INET6;
         tlv_handl.name = "TUN6_EXTENSION";
         tlv_handl.tx_frame_handler = create_description_tlv_tun6_adv;
@@ -3590,7 +3562,6 @@ int32_t hna_init( void )
         memset(&tlv_handl, 0, sizeof (tlv_handl));
         tlv_handl.min_msg_size = sizeof (struct description_msg_tun4in6_ingress_adv);
         tlv_handl.fixed_msg_size = 1;
-        tlv_handl.is_relevant = 1;
         tlv_handl.family = AF_INET6;
         tlv_handl.name = "TUN4IN6_INGRESS_EXTENSION";
         tlv_handl.tx_frame_handler = create_description_tlv_tunXin6_ingress_adv;
@@ -3601,7 +3572,6 @@ int32_t hna_init( void )
         memset(&tlv_handl, 0, sizeof (tlv_handl));
         tlv_handl.min_msg_size = sizeof (struct description_msg_tun6in6_ingress_adv);
         tlv_handl.fixed_msg_size = 1;
-        tlv_handl.is_relevant = 1;
         tlv_handl.family = AF_INET6;
         tlv_handl.name = "TUN6IN6_INGRESS_EXTENSION";
         tlv_handl.tx_frame_handler = create_description_tlv_tunXin6_ingress_adv;
@@ -3613,7 +3583,6 @@ int32_t hna_init( void )
         memset(&tlv_handl, 0, sizeof (tlv_handl));
         tlv_handl.min_msg_size = sizeof (struct description_msg_tun4in6_src_adv);
         tlv_handl.fixed_msg_size = 1;
-        tlv_handl.is_relevant = 1;
         tlv_handl.family = AF_INET6;
         tlv_handl.name = "TUN4IN6_SRC_EXTENSION";
         tlv_handl.tx_frame_handler = create_description_tlv_tunXin6_src_adv;
@@ -3624,7 +3593,6 @@ int32_t hna_init( void )
         memset(&tlv_handl, 0, sizeof (tlv_handl));
         tlv_handl.min_msg_size = sizeof (struct description_msg_tun6in6_src_adv);
         tlv_handl.fixed_msg_size = 1;
-        tlv_handl.is_relevant = 1;
         tlv_handl.family = AF_INET6;
         tlv_handl.name = "TUN6IN6_SRC_EXTENSION";
         tlv_handl.tx_frame_handler = create_description_tlv_tunXin6_src_adv;
@@ -3636,7 +3604,6 @@ int32_t hna_init( void )
         memset(&tlv_handl, 0, sizeof (tlv_handl));
         tlv_handl.min_msg_size = sizeof (struct description_msg_tun4in6_net_adv);
         tlv_handl.fixed_msg_size = 1;
-        tlv_handl.is_relevant = 1;
         tlv_handl.family = AF_INET6;
         tlv_handl.name = "TUN4IN6_NET_EXTENSION";
         tlv_handl.tx_frame_handler = create_description_tlv_tunXin6_net_adv;
@@ -3647,7 +3614,6 @@ int32_t hna_init( void )
         memset(&tlv_handl, 0, sizeof (tlv_handl));
         tlv_handl.min_msg_size = sizeof (struct description_msg_tun6in6_net_adv);
         tlv_handl.fixed_msg_size = 1;
-        tlv_handl.is_relevant = 1;
         tlv_handl.family = AF_INET6;
         tlv_handl.name = "TUN6IN6_NET_EXTENSION";
         tlv_handl.tx_frame_handler = create_description_tlv_tunXin6_net_adv;

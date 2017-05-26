@@ -54,6 +54,8 @@ static int32_t ogm_purge_to = DEF_OGM_PURGE_TO;
 
 int32_t my_tx_interval = DEF_TX_INTERVAL;
 
+uint16_t my_desc_capabilities = MY_DESC_CAPABILITIES;
+
 int32_t my_ogm_interval = DEF_OGM_INTERVAL;   /* orginator message interval in miliseconds */
 
 static int32_t link_purge_to = DEF_LINK_PURGE_TO;
@@ -667,11 +669,9 @@ void free_orig_node(struct orig_node *on)
 
         purge_orig_router(on, NULL, NO);
 
-        if (on->desc && on->added) {
-                //cb_plugin_hooks(PLUGIN_CB_DESCRIPTION_DESTROY, on);
+        if (on->added) {
+		assertion(-500000, (on->desc));
                 process_description_tlvs(NULL, on, on->desc, TLV_OP_DEL, FRAME_TYPE_PROCESS_ALL, NULL, NULL);
-        } else {
-                cache_desc_tlv_hashes(TLV_OP_DEL, on, 0, BMX_DSC_TLV_MAX, NULL, 0);
         }
 
         if ( on->dhn ) {
@@ -800,28 +800,6 @@ struct link_node *get_link_node(struct packet_buff *pb)
 
         if (local) {
 
-                if ((((PKT_SQN_T) (pb->i.pkt_sqn + PKT_SQN_DAD_TOLERANCE - local->packet_sqn)) > (PKT_SQN_DAD_RANGE + PKT_SQN_DAD_TOLERANCE))) {
-
-                        if (((TIME_T) (bmx_time - local->packet_time) < (TIME_T) PKT_SQN_DAD_RANGE * my_tx_interval)) {
-
-                                dbgf_sys(DBGT_WARN, "DAD-Alert NB=%s local_id=%X dev=%s pkt_sqn=%d pkt_sqn_max=%d dad_range=%d dad_to=%d",
-                                        pb->i.llip_str, ntohl(pb->i.link_key.local_id), pb->i.iif->label_cfg.str, pb->i.pkt_sqn, local->packet_sqn,
-                                        PKT_SQN_DAD_RANGE, PKT_SQN_DAD_RANGE * my_tx_interval);
-
-                                schedule_tx_task(&pb->i.iif->dummy_lndev, FRAME_TYPE_PROBLEM_ADV, sizeof (struct msg_problem_adv),
-                                        FRAME_TYPE_PROBLEM_CODE_DUP_LINK_ID, local->local_id, 0, pb->i.transmittersIID);
-
-                                // its safer to purge the old one, otherwise we might end up with hundrets
-                                //return NULL;
-                        }
-
-                        purge_local_node(local);
-
-                        assertion(-500983, (!avl_find_item(&local_tree, &pb->i.link_key.local_id)));
-
-                        return NULL;
-                }
-
                 if ((((LINKADV_SQN_T) (pb->i.link_sqn - local->packet_link_sqn_ref)) > LINKADV_SQN_DAD_RANGE)) {
 
                         dbgf_sys(DBGT_ERR, "DAD-Alert NB=%s local_id=%X dev=%s link_sqn=%d link_sqn_max=%d dad_range=%d dad_to=%d",
@@ -893,7 +871,6 @@ struct link_node *get_link_node(struct packet_buff *pb)
                 avl_insert(&local_tree, local, -300337);
         }
 
-        local->packet_sqn = pb->i.pkt_sqn;
         local->packet_link_sqn_ref = pb->i.link_sqn;
         local->packet_time = bmx_time;
 
@@ -991,7 +968,6 @@ void rx_packet( struct packet_buff *pb )
         struct packet_header *hdr = &pb->packet.header;
         uint16_t pkt_length = ntohs(hdr->pkt_length);
         pb->i.transmittersIID = ntohs(hdr->transmitterIID);
-        pb->i.pkt_sqn = ntohl(hdr->pkt_sqn);
         pb->i.link_sqn = ntohs(hdr->link_adv_sqn);
 
         pb->i.link_key.local_id = hdr->local_id;
@@ -1020,7 +996,7 @@ void rx_packet( struct packet_buff *pb )
 	// we acceppt longer packets than specified by pos->size to allow padding for equal packet sizes
         if (    pb->i.total_length < (int) (sizeof (struct packet_header) + sizeof (struct frame_header_long)) ||
                 pkt_length < (int) (sizeof (struct packet_header) + sizeof (struct frame_header_long)) ||
-                hdr->bmx_version != COMPATIBILITY_VERSION ||
+                ((hdr->comp_version < (COMPATIBILITY_VERSION - 1)) || (hdr->comp_version > (COMPATIBILITY_VERSION + 1))) ||
                 pkt_length > pb->i.total_length || pkt_length > MAX_UDPD_SIZE ||
                 pb->i.link_key.dev_idx < DEVADV_IDX_MIN || pb->i.link_key.local_id == LOCAL_ID_INVALID ) {
 
@@ -1084,7 +1060,7 @@ void rx_packet( struct packet_buff *pb )
 
 
         dbgf_all(DBGT_INFO, "version=%i, reserved=%X, size=%i IID=%d rcvd udp_len=%d via NB %s %s %s",
-                hdr->bmx_version, hdr->reserved, pkt_length, pb->i.transmittersIID,
+                hdr->comp_version, hdr->capabilities, pkt_length, pb->i.transmittersIID,
                 pb->i.total_length, pb->i.llip_str, iif->label_cfg.str, pb->i.unicast ? "UNICAST" : "BRC");
 
 
@@ -1105,8 +1081,8 @@ process_packet_error:
         dbgf_sys(DBGT_WARN,
                 "Drop (remaining) packet: rcvd problematic packet via NB=%s dev=%s "
                 "(version=%i, local_id=%X dev_idx=0x%X, reserved=0x%X, pkt_size=%i), udp_len=%d my_version=%d, max_udpd_size=%d",
-                pb->i.llip_str, iif->label_cfg.str, hdr->bmx_version,
-                ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx, hdr->reserved, pkt_length, pb->i.total_length,
+                pb->i.llip_str, iif->label_cfg.str, hdr->comp_version,
+                ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx, hdr->capabilities, pkt_length, pb->i.total_length,
                 COMPATIBILITY_VERSION, MAX_UDPD_SIZE);
 
         blacklist_neighbor(pb);
@@ -2187,7 +2163,6 @@ struct orig_node *init_orig_node(GLOBAL_ID_T *id)
         on->global_id = *id;
 
         AVL_INIT_TREE(on->rt_tree, struct router_node, local_key);
-        AVL_INIT_TREE(on->desc_tlv_hash_tree, struct desc_tlv_hash_node, tlv_type);
 
         avl_insert(&orig_tree, on, -300148);
 
