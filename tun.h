@@ -439,19 +439,18 @@ struct tun_dev_offer {
 	IP6_T localIp; // key for tunnel_in_tree
 
 	// the advertised part (by description_msg_src6in6_adv):
-	struct net_key ingressPrefix46[2];
-
-	struct net_key remotePrefix46[2];
-	uint8_t remoteMode46[2];
-	uint8_t remotePrefixMin46[2];
-	uint8_t updated46[2];
+	struct net_key ingressPrefix;
+	struct net_key remotePrefix;
+	uint8_t remoteMode;
+	uint8_t remotePrefixMin;
+	uint8_t updated;
 
 	//the status:
 	struct tun_dev_offer_key tunOutKey; // key for tunnel_out_tree
-	struct tun_dev_in *tin46[2];
-	struct tun_dev_out *tdnDedicated46[2];
-	struct tun_dev_out *tdnCatchAll46[2];
-
+	struct tun_dev_in *tin;
+	struct tun_dev_out *tdnDedicated;
+	struct tun_dev_out *tdnCatchAll;
+	
 	//TIME_SEC_T tdnLastUsed_ts;
 
 	struct avl_tree tun_net_tree;
@@ -474,7 +473,7 @@ struct tun_dev_out {
 	struct user_net_device_stats stats;
 	IDM_T stats_captured;
 
-	struct avl_tree tun_bit_tree[2];
+	struct avl_tree tun_bit_tree;
 };
 
 
