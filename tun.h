@@ -56,10 +56,10 @@
 #define HLP_TUN_DEV_INGRESS "limit allowed source-address range routable via this tunnel"
 
 
-#define ARG_TUN_DEV_MODE_REMOTEPREFIX "remotePrefix"
-#define HLP_TUN_DEV_MODE_REMOTEXPREFIX "remote source prefix (for address allocation)"
+#define ARG_TUN_DEV_MODE_REMOTEPREFIX "delegatePrefix"
+#define HLP_TUN_DEV_MODE_REMOTEXPREFIX "remote source prefix (for address delegation)"
 
-#define ARG_TUN_DEV_MODE_REMOTE "remoteMode"
+#define ARG_TUN_DEV_MODE_REMOTE "delegateMode"
 #define HLP_TUN_DEV_MODE_REMOTEX "required remote source address configuration mode (0 = unspecified, 1 = manual, 2 = auto)"
 #define MIN_TUN_DEV_MODE           0x00
 #define TYP_TUN_DEV_MODE_UNDEFINED 0x00
@@ -68,7 +68,7 @@
 #define MAX_TUN_DEV_MODE           0x02
 #define DEF_TUN_DEV_MODE           TYP_TUN_DEV_MODE_UNDEFINED
 
-#define ARG_TUN_DEV_MODE_REMOTE_MIN "remoteMin"
+#define ARG_TUN_DEV_MODE_REMOTE_MIN "delegateMin"
 #define HLP_TUN_DEV_MODE_REMOTEX_MIN "minimum allowed remote source prefix length for address (auto) configuration (0 = NO autoconfig)"
 
 

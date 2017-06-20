@@ -465,7 +465,7 @@ struct tun_dev_out * tun_dev_out_del(struct tun_bit_node *tbn)
 				avl_remove(&tun_catch_tree, &tdn->tunCatchKey, -300527);
 				kernel_dev_tun_del(tdn->nameKey.str, tdn->tunCatch_fd);
 				debugFree(tdn, -300528);
-			//}
+			//"}
 		}
 
 	} else { //dedicated:
@@ -2139,11 +2139,11 @@ struct tun_out_status {
 	uint32_t pref;
 	uint32_t table;
 	uint32_t ipMtc;
-	char *tunOutDev;
 	char *tunDev;
+	char *tunDevDev;
 	char *tunDevOut;
 	char srcSearch[IPX_PREFIX_STR_LEN+4];
-	int16_t sSM;
+	int16_t lM;
 	char srcAddr[IPX_PREFIX_STR_LEN];
 	char *tunName;
 	int16_t setProto;
@@ -2154,9 +2154,9 @@ struct tun_out_status {
 	uint32_t i;
 	int16_t advProto;
 	char advNet[IPX_PREFIX_STR_LEN];
-	char srcIngress[IPX_PREFIX_STR_LEN];
+	char ingress[IPX_PREFIX_STR_LEN];
 	char srcOffer[IPX_PREFIX_STR_LEN+4];
-	int16_t sOM;
+	int16_t dM;
 	UMETRIC_T advBwVal;
 	UMETRIC_T *advBw;
 	UMETRIC_T *pathMtc;
@@ -2186,11 +2186,11 @@ static const struct field_format tun_out_status_format[] = {
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, pref,        1, FIELD_RELEVANCE_TUNPROT),
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, table,       1, FIELD_RELEVANCE_TUNPROT),
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, ipMtc,       1, FIELD_RELEVANCE_TUNPROT),
-        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunOutDev,   1, FIELD_RELEVANCE_MEDI),
-        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunDev,      1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunDev,      1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunDevDev,   1, FIELD_RELEVANCE_LOW),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunDevOut,   1, FIELD_RELEVANCE_LOW),
         FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, srcSearch,   1, FIELD_RELEVANCE_LOW),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, sSM,         1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, lM,          1, FIELD_RELEVANCE_LOW),
         FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, srcAddr,     1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunName,     1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, setProto,    1, FIELD_RELEVANCE_TUNPROT),
@@ -2201,9 +2201,9 @@ static const struct field_format tun_out_status_format[] = {
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, i,           1, FIELD_RELEVANCE_MEDI),
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, advProto,    1, FIELD_RELEVANCE_TUNPROT),
         FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, advNet,      1, FIELD_RELEVANCE_HIGH),
-        FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, srcIngress,  1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, ingress,     1, FIELD_RELEVANCE_MEDI),
         FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, srcOffer,    1, FIELD_RELEVANCE_MEDI),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, sOM,         1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, dM,          1, FIELD_RELEVANCE_MEDI),
         FIELD_FORMAT_INIT(FIELD_TYPE_UMETRIC,           tun_out_status, advBwVal,    1, FIELD_RELEVANCE_LOW),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_UMETRIC,   tun_out_status, advBw,       1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_UMETRIC,   tun_out_status, pathMtc,     1, FIELD_RELEVANCE_HIGH),
@@ -2271,9 +2271,9 @@ static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
 				s->table = tsn->iptable;
 				s->pref = tsn->iprule;
 				s->ipMtc = tsn->ipmetric;
-				s->tunOutDev = strlen(tsn->tunInNameKey.str) ? tsn->tunInNameKey.str : DBG_NIL;
+				s->tunDev = strlen(tsn->tunInNameKey.str) ? tsn->tunInNameKey.str : DBG_NIL;
 			} else {
-				s->tunOutDev = DBG_NIL;
+				s->tunDev = DBG_NIL;
 				s->tunOut = DBG_NIL;
 				s->gwName = DBG_NIL;
 				s->proto = -1;
@@ -2299,13 +2299,13 @@ static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
 			struct tun_dev_in *tin = tnn && tnn->tunNetKey.ton->tin ? tnn->tunNetKey.ton->tin : NULL;
 
 			if (tin) {
-				s->tunDev = tin->nameKey.str;
+				s->tunDevDev = tin->nameKey.str;
 				s->tunDevOut = strlen(tin->tunSearchNameKey) ? tin->tunSearchNameKey : DBG_NIL;
 				sprintf(s->srcSearch, "%s<=%d",netAsStr(&tin->localPrefix),tin->localPrefixMax);
-				s->sSM = tin->localPrefixMode;
+				s->lM = tin->localPrefixMode;
 				strcpy(s->srcAddr, netAsStr(&tin->tunAddr));
 			} else {
-				s->tunDev = DBG_NIL;
+				s->tunDevDev = DBG_NIL;
 				s->tunDevOut = DBG_NIL;
 				strcpy(s->srcSearch, DBG_NIL);
 				strcpy(s->srcAddr, DBG_NIL);
@@ -2325,15 +2325,18 @@ static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
 				s->i = ton->tunOutKey.tun6Id;
 				s->advProto = tnn->tunNetKey.bmx7RouteType;
 				strcpy(s->advNet, netAsStr(&tnn->tunNetKey.netKey));
-				strcpy(s->srcIngress, netAsStr(&ton->ingressPrefix));
-				sprintf(s->srcOffer, "%s>=%d",netAsStr(&ton->remotePrefix), ton->remotePrefixMin);
-				s->sOM = ton->remoteMode;
+				strcpy(s->ingress, ton->ingressPrefix.af ? netAsStr(&ton->ingressPrefix) : DBG_NIL);
+				if (ton->remotePrefix.af)
+					sprintf(s->srcOffer, "%s>=%d",netAsStr(&ton->remotePrefix), ton->remotePrefixMin);
+				else
+					sprintf(s->srcOffer, DBG_NIL);
+				s->dM = ton->remoteMode;
 				s->advBwVal = fmetric_u8_to_umetric(tnn->bandwidth);
 				s->advBw = s->advBwVal ? &s->advBwVal : NULL;
 				s->pathMtc = ton->tunOutKey.on->neighPath.link ? &ton->tunOutKey.on->neighPath.um : NULL;
 			} else {
 				strcpy(s->advNet, DBG_NIL);
-				strcpy(s->srcIngress, DBG_NIL);
+				strcpy(s->ingress, DBG_NIL);
 				strcpy(s->srcOffer, DBG_NIL);
 			}
 
