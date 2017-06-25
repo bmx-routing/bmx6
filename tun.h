@@ -436,7 +436,7 @@ struct tun_dev_offer_key {
 
 struct tun_dev_offer {
 	// the advertised part (by description_msg_tun6_adv):
-	IP6_T localIp; // key for tunnel_in_tree
+	IP6_T remoteTunIp; // key for tunnel_in_tree
 
 	// the advertised part (by description_msg_src6in6_adv):
 	struct net_key ingressPrefix;
@@ -477,3 +477,5 @@ struct tun_dev_out {
 };
 
 
+IDM_T get_max_tun6Id(void);
+struct tun_dev_in *get_tun6Id_node(int16_t tun6Id);

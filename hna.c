@@ -149,6 +149,32 @@ uint32_t create_tlv_hna(uint8_t* data, uint32_t max_size, uint32_t pos, struct n
         return (pos + sizeof (struct dsc_msg_hna6));
 }
 
+IDM_T get_max_tun6Id(void) {
+	int16_t tun6Id = -1;
+
+	struct avl_node *an;
+	struct tun_dev_in *tin;
+	for (an = NULL; (tin = avl_iterate_item(&tun_in_tree, &an));)
+		tun6Id = XMAX(tun6Id, tin->tun6Id);
+
+	assertion(-500000, (tun6Id < MAX_AUTO_TUNID_OCT));
+
+	return tun6Id;
+}
+
+
+struct tun_dev_in *get_tun6Id_node(int16_t tun6Id) {
+	struct avl_node *an;
+	struct tun_dev_in *tin;
+	for (an = NULL; (tin = avl_iterate_item(&tun_in_tree, &an));) {
+
+		if (tun6Id == tin->tun6Id)
+			return tin;
+	}
+
+	return NULL;
+}
+
 
 STATIC_FUNC
 int create_dsc_tlv_hna(struct tx_frame_iterator *it)
@@ -167,17 +193,14 @@ int create_dsc_tlv_hna(struct tx_frame_iterator *it)
 
         pos = create_tlv_hna(data, max_size, pos, setNet(NULL, AF_INET6, 128, &my_primary_ip), 0);
 
-	IDM_T TODO_what_about_adding_these;
-	/*
 	IDM_T tun6Id;
-	struct tun_in_node *tin;
+	struct tun_dev_in *tin;
 	for (tun6Id = 0; tun6Id <= get_max_tun6Id(); tun6Id++) {
-		if ((tin = get_tun6Id_node(tun6Id)) && tin->upIfIdx && tin->tun6Id >= 0 && is_ip_set(&tin->remoteDummyIp6)) {
+		if ((tin = get_tun6Id_node(tun6Id)) && tin->upIfIdx && tin->tun6Id >= 0 && is_ip_set(&tin->localRemoteIp6)) {
 			assertion(-501237, (tin->upIfIdx && tin->tun6Id >= 0));
-			pos = create_tlv_hna(data, max_size, pos, setNet(NULL, AF_INET6, 128, &tin->remoteDummyIp6), DESC_MSG_HNA_FLAG_NO_ROUTE);
+			pos = create_tlv_hna(data, max_size, pos, setNet(NULL, AF_INET6, 128, &tin->localRemoteIp6), 0);
 		}
 	}
-	*/
 
 //	for (an = NULL; (un = avl_iterate_item(&local_uhna_tree, &an));)
 //		pos = _create_tlv_hna(data, max_size, pos, &un->key, 0);
