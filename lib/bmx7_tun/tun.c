@@ -3008,7 +3008,7 @@ int32_t opt_tun_in_dev(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 			}
 		}
 
-		if (opt_tun_in_dev_args(cmd, opt, patch, cn, tin) != SUCCESS)
+		if (patch->diff != DEL && opt_tun_in_dev_args(cmd, opt, patch, cn, tin) != SUCCESS)
 			return FAILURE;
 
 		if (cmd == OPT_APPLY) {
