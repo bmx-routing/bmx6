@@ -3367,6 +3367,23 @@ static void tun_cleanup(void)
 	}
 }
 
+
+
+
+STATIC_FUNC
+int32_t tx_frame_tun_request(struct tx_frame_iterator *it)
+{
+
+	return sizeof(struct msg_tun_request);
+
+}
+
+STATIC_FUNC
+int32_t rx_frame_tun_request(struct rx_frame_iterator *it)
+{
+	return TLV_RX_DATA_PROCESSED;
+}
+
 static int32_t tun_init(void)
 {
 	assertion(-501335, is_zero((void*) &ZERO_TUN_NET_KEY, sizeof(ZERO_TUN_NET_KEY)));
@@ -3453,6 +3470,18 @@ static int32_t tun_init(void)
 	tlv_handl.rx_frame_handler = process_dsc_tlv_tunXin6net;
 	tlv_handl.msg_format = tun6in6_adv_format;
 	register_frame_handler(description_tlv_db, BMX_DSC_TLV_TUN6IN6_NET, &tlv_handl);
+
+
+	tlv_handl.name = "TUN_REQ";
+	tlv_handl.rx_processUnVerifiedLink = 0;
+	tlv_handl.min_msg_size = sizeof(struct msg_tun_request);
+	tlv_handl.fixed_msg_size = 1;
+	tlv_handl.tx_frame_handler = tx_frame_tun_request;
+	tlv_handl.rx_frame_handler = rx_frame_tun_request;
+	register_frame_handler(packet_frame_db, FRAME_TYPE_TUN_REQ, &tlv_handl);
+
+
+
 
 	set_tunXin6_net_adv_list = set_tunXin6_net_adv_list_handl;
 

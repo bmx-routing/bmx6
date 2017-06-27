@@ -257,6 +257,15 @@ struct dsc_msg_tun6in6remote {
 {FIELD_TYPE_IPX6,     -1, 128, 0, FIELD_RELEVANCE_HIGH, "srcPrefix" },  \
 FIELD_FORMAT_END }
 
+
+struct msg_tun_request {
+	uint8_t tun6Id;
+	uint8_t srcPrefixLen;
+	IP6_T srcPrefix;
+} __attribute__((packed));
+
+
+
 struct dsc_msg_tun4in6net {
 	uint8_t tun6Id;
 	uint8_t proto_type;
@@ -479,3 +488,5 @@ struct tun_dev_out {
 
 IDM_T get_max_tun6Id(void);
 struct tun_dev_in *get_tun6Id_node(int16_t tun6Id);
+
+
