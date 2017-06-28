@@ -890,30 +890,30 @@ void _assign_ton_in_nodes(void) {
 	struct tun_dev_in *tin;
 	while ((tin = avl_iterate_item(&tun_in_tree, &an))) {
 		struct tun_search_node *tsn;
-		IDM_T isv4 = (tin->af == AF_INET);
 
-		dbgf_track(DBGT_INFO, "Checking af=%s=%d tunIn=%s seachName=%s mode=%d localPrefix=%s<=%d addr=%s",
-			(isv4 ? "IPv4" : "IPv6"),tin->af, tin->nameKey.str, tin->tunSearchNameKey, tin->localPrefixMode,
+		dbgf_track(DBGT_INFO, "Checking af=%d tunIn=%s seachName=%s mode=%d localPrefix=%s<=%d addr=%s",
+			tin->af, tin->nameKey.str, tin->tunSearchNameKey, tin->localPrefixMode,
 			netAsStr(&tin->localPrefix), tin->localPrefixMax, netAsStr(&tin->tunAddr));
 
 		if (!(
 			tin->localPrefixMode == TYP_TUN_DEV_MODE_AUTO &&
 			strlen(tin->tunSearchNameKey) &&
 			(tsn = avl_find_item(&tun_search_tree, tin->tunSearchNameKey)) &&
-			(!strcmp(tsn->tunInNameKey.str, tin->nameKey.str))
+			(!strcmp(tsn->tunInNameKey.str, tin->nameKey.str)) &&
+			(!is_zero(&tsn->gwId, sizeof(tsn->gwId))) &&
+			(tsn->net.af == tin->af)
 			))
-			continue;
-
-		if (is_zero(&tsn->gwId, sizeof(tsn->gwId)))
 			continue;
 
 		struct tun_dev_offer *ton;
 		struct tun_dev_offer_key tok = {.on = avl_find_item(&orig_tree, &tsn->gwId), .tun6Id = 0 };
 		for (; (tok.on && (ton = avl_find_item(&tun_out_tree, &tok))); tok.tun6Id++) {
 
-			dbgf_track(DBGT_INFO, "Checking ton name=%s tunId=%d mode=%d srcOffer=%s>=%d",
+			struct net_key *ingress = &ton->ingressPrefix;
+
+			dbgf_track(DBGT_INFO, "Checking ton name=%s tunId=%d mode=%d srcOffer=%s>=%d ingress=%s",
 				ton->tunOutKey.on->k.hostname, ton->tunOutKey.tun6Id,
-				ton->remoteMode, netAsStr(&ton->remotePrefix), ton->remotePrefixMin);
+				ton->remoteMode, netAsStr(&ton->remotePrefix), ton->remotePrefixMin, netAsStr(ingress));
 
 			if (!(
 				!ton->tin &&
@@ -922,26 +922,23 @@ void _assign_ton_in_nodes(void) {
 				tin->localPrefixMax >= ton->remotePrefixMin &&
 				ton->remotePrefixMin >= ton->remotePrefix.mask &&
 				tin->localPrefix.mask <= ton->remotePrefix.mask &&
-				is_ip_net_equal(&tin->localPrefix.ip, &ton->remotePrefix.ip, tin->localPrefix.mask, tin->af)
+				is_ip_net_equal(&tin->localPrefix.ip, &ton->remotePrefix.ip, tin->localPrefix.mask, tin->af) &&
+				IMPLIES(ingress->af, (ingress->af == ton->remotePrefix.af)) &&
+				IMPLIES(ingress->mask, (ton->remotePrefix.mask >= ingress->mask && is_ip_net_equal(&ton->remotePrefix.ip, &ingress->ip, ingress->mask, ingress->af)))
 				))
 				continue;
 
-			struct net_key ingress = ton->ingressPrefix;
 			struct tun_net_offer *tnn;
 			struct avl_node *itnn = NULL;
-			while ((tnn = avl_iterate_item(&ton->tun_net_tree, &itnn))) {
+			while ((tnn = avl_iterate_item(&ton->tun_net_tree, &itnn)) && !match_tsn_requirements(tsn, tnn));
+			struct net_key result = tin->tunAddr;
+			dbgf_track(DBGT_INFO, "Matching net=%s", tnn ? netAsStr(&tnn->tunNetKey.netKey) : NULL);
 
-				dbgf_track(DBGT_INFO, "Checking net=%s", netAsStr(&tnn->tunNetKey.netKey));
-
-				struct net_key result = tin->tunAddr;
-				if (!(
-					tnn->tunNetKey.netKey.af == (isv4 ? AF_INET : AF_INET6) &&
-					match_tsn_requirements(tsn, tnn) &&
-					(result.mask || _find_free_local_prefix(&ton->remotePrefix, tin->localPrefixMax, &result, NULL)) &&
-					IMPLIES(ingress.af, ingress.af == tin->af) &&
-					(!ingress.mask || (result.mask >= ingress.mask && is_ip_net_equal(&result.ip, &ingress.ip, ingress.mask, ingress.af)))
-					))
-					continue;
+			if (tnn && 
+				(result.mask || _find_free_local_prefix(&ton->remotePrefix, tin->localPrefixMax, &result, NULL)) &&
+				IMPLIES(ingress->af, (ingress->af == result.af)) &&
+				IMPLIES(ingress->mask, (result.mask >= ingress->mask && is_ip_net_equal(&result.ip, &ingress->ip, ingress->mask, ingress->af)))
+				) {
 
 				ton->tin = tin;
 				avl_insert(&tin->tun_dev_offer_tree, ton, -300000);
@@ -953,7 +950,6 @@ void _assign_ton_in_nodes(void) {
 				}
 
 				dbgf_track(DBGT_INFO, "Found");
-				break;
 			}
 		}
 	}
@@ -2389,7 +2385,7 @@ void configure_tunnel_in(uint8_t del, struct tun_dev_in *tin)
 			kernel_set_addr(ADD, tin->upIfIdx, AF_INET6, local, 128, YES /*deprecated*/);
 
 			if (tin->tunAddr.mask)
-					kernel_set_addr(ADD, tin->upIfIdx, tin->tunAddr.af, &tin->tunAddr.ip, ((tin->tunAddr.af == AF_INET) ? 32 : 128), NO /*deprecated*/);
+				kernel_set_addr(ADD, tin->upIfIdx, tin->tunAddr.af, &tin->tunAddr.ip, ((tin->tunAddr.af == AF_INET) ? 32 : 128), NO /*deprecated*/);
 
 			my_description_changed = YES;
 		}
@@ -2993,6 +2989,7 @@ int32_t opt_tun_in_dev(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 
 			if (tin)
 				configure_tunnel_in(ADD, tin);
+
 			upd_tun_bit_node(ADD, NULL, NULL);
 
 			eval_tun_bit_tree(NULL);
@@ -3373,6 +3370,8 @@ static void tun_cleanup(void)
 STATIC_FUNC
 int32_t tx_frame_tun_request(struct tx_frame_iterator *it)
 {
+	struct hdr_tun_request *hdr = ((struct hdr_tun_request*) tx_iterator_cache_hdr_ptr(it));
+	struct msg_tun_request *msg = ((struct msg_tun_request*) tx_iterator_cache_msg_ptr(it));
 
 	return sizeof(struct msg_tun_request);
 

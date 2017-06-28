@@ -264,6 +264,11 @@ struct msg_tun_request {
 	IP6_T srcPrefix;
 } __attribute__((packed));
 
+struct hdr_tun_request {
+	GLOBAL_ID_T dest_nodeId;
+	DESC_SQN_T descSqn;
+	struct msg_tun_request msg[];
+} __attribute__((packed));
 
 
 struct dsc_msg_tun4in6net {
