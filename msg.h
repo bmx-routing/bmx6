@@ -143,6 +143,9 @@ extern int32_t txTaskTreeSizeMax;
 
 #define FRAME_TYPE_OGM_ADV    21
 
+#define FRAME_TYPE_TUN_REQ          23
+#define FRAME_TYPE_TUN_REPLY        24
+
 #define FRAME_TYPE_OGM_REQ          27
 #define FRAME_TYPE_IID_REQ        28  // Hash-for-description-of-OG-ID requests
 #define FRAME_TYPE_DESC_REQ         29

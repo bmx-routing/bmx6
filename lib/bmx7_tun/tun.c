@@ -66,31 +66,23 @@
 
 
 static AVL_TREE(tun_search_tree, struct tun_search_node, nameKey); // configured tun_out names searches
-//static AVL_TREE(tun_search_net_tree, struct tun_search_node, tunSearchKey); //REMOVE // configured tun_out networks searches
 
 static AVL_TREE(tun_bit_tree, struct tun_bit_node, tunBitKey); // identified matching bits (peaces) of tun_search and tun_net trees
 
-static AVL_TREE(tun_net_tree, struct tun_net_node, tunNetKey); // rcvd tun_out network advs
-static AVL_TREE(tun_out_tree, struct tun_out_node, tunOutKey); // rcvd tun_out advs
-static AVL_TREE(tun_catch_tree, struct tun_dev_node, tunCatchKey); // active tun_out tunnels
+static AVL_TREE(tun_net_tree, struct tun_net_offer, tunNetKey); // rcvd tun_out network advs
+static AVL_TREE(tun_out_tree, struct tun_dev_offer, tunOutKey); // rcvd tun_out advs
+static AVL_TREE(tun_catch_tree, struct tun_dev_out, tunCatchKey); // active tun_out tunnels
 
 LIST_SIMPEL(tunXin6_net_adv_list_list, struct tunXin6_net_adv_list_node, list, list);
 
-static const struct tun_net_key ZERO_TUN_NET_KEY = {.ton = NULL};
-//static const struct tun_catch_key ZERO_TUN_DEV_KEY = {.srcAf=0};
-
-//static struct net_key tun4_address = ZERO_NET_KEY_INIT;
-//char* tun4_dev = NULL;
-//static struct net_key tun6_address = ZERO_NET_KEY_INIT;
-//char* tun6_dev = NULL;
-
-
-
+static const struct tun_net_offer_key ZERO_TUN_NET_KEY = {.ton = NULL};
 
 static int32_t tun_out_mtu = DEF_TUN_OUT_MTU;
 static int32_t tun_dedicated_to = DEF_TUN_OUT_TO;
 static int32_t tun_proactive_routes = DEF_TUN_PROACTIVE_ROUTES;
 
+static uint8_t tun6_advs_added;
+static uint8_t tun6_nets_resetted;
 
 STATIC_FUNC
 void configure_tun_bit(uint8_t del, struct tun_bit_node *tbn, IDM_T asDfltTun);
@@ -184,79 +176,7 @@ IFNAME_T tun_out_get_free_name(char *typename, char *proposedName)
 	return name;
 }
 
-STATIC_FUNC
-IDM_T configure_tunnel_in(uint8_t del, struct tun_in_node *tin, int16_t tun6Id)
-{
-	TRACE_FUNCTION_CALL;
-	assertion(-501523, IMPLIES(!del, is_ip_set(&tin->remote)));
-	assertion(-501341, IMPLIES(!del, (is_ip_set(&my_primary_ip))));
-	assertion(-501311, IMPLIES(tin->upIfIdx, tin->nameKey.str[0]));
-	assertion(-501342, IMPLIES(tin->upIfIdx, del));
-	assertion(-501368, IMPLIES(del, ((tin->tun6Id >= 0) == (tin->upIfIdx > 0))));
-	assertion(-501369, IMPLIES(!del, ((tun6Id >= 0) && (tin->upIfIdx == 0))));
 
-	if (del && tin->upIfIdx) {
-
-		IDM_T result = kernel_tun_del(tin->nameKey.str);
-		assertion(-501451, (result == SUCCESS));
-		tin->upIfIdx = 0;
-		tin->tun6Id = -1;
-		my_description_changed = YES;
-
-	} else if (!del && !tin->upIfIdx) {
-
-		IPX_T *local = &my_primary_ip;
-		IPX_T *remote = &tin->remote;
-
-		if (!is_ip_set(remote) || is_ip_local(remote) ||
-			(tin->ingressPrefix46[0].mask && find_overlapping_hna(&tin->ingressPrefix46[0].ip, tin->ingressPrefix46[0].mask, NULL))) {
-
-			dbgf_sys(DBGT_WARN, "FAILED creating tun remoteIp=%s", ip6AsStr(&tin->remote));
-			return FAILURE;
-		}
-
-		assertion(-501312, (strlen(tin->nameKey.str)));
-
-		if ((tin->upIfIdx = kernel_tun_add(tin->nameKey.str, IPPROTO_IP, local, remote)) > 0) {
-
-			tin->tun6Id = tun6Id;
-
-			if (tin->tunAddr46[1].mask)
-				kernel_set_addr(ADD, tin->upIfIdx, AF_INET, &tin->tunAddr46[1].ip, 32, NO /*deprecated*/);
-
-			if (tin->tunAddr46[0].mask)
-				kernel_set_addr(ADD, tin->upIfIdx, AF_INET6, &tin->tunAddr46[0].ip, 128, NO /*deprecated*/);
-
-			my_description_changed = YES;
-		}
-	}
-
-	return(XOR(del, tin->upIfIdx)) ? SUCCESS : FAILURE;
-}
-
-STATIC_FUNC
-void reconfigure_tun_ins(void)
-{
-	struct avl_node *an;
-	struct tun_in_node *tin;
-
-
-	for (an = NULL; (tin = avl_iterate_item(&tun_in_tree, &an));)
-		configure_tunnel_in(DEL, tin, -1);
-
-	int16_t m = 0;
-	for (an = NULL; (tin = avl_iterate_item(&tun_in_tree, &an));) {
-
-		if (!tin->remote_manual) {
-			tin->remote = my_primary_ip;
-			tin->remote.s6_addr[DEF_AUTO_TUNID_OCT_POS] += (m+MIN_AUTO_TUNID_OCT);
-		}
-
-		configure_tunnel_in(ADD, tin, m++);
-		assertion(-502040, ((m + MIN_AUTO_TUNID_OCT) <= MAX_AUTO_TUNID_OCT));
-		assertion(-501237, (tin->upIfIdx && tin->tun6Id >= 0));
-	}
-}
 
 STATIC_FUNC
 uint16_t set_tun_out_mtu(char *name, uint16_t orig_mtu, uint16_t def_mtu, uint16_t new_mtu)
@@ -286,18 +206,20 @@ struct tun_packet {
 } __attribute__((packed));
 
 STATIC_FUNC
-void tun_out_state_set(struct tun_out_node *ton, IDM_T tdn_state)
+void tun_out_state_set(struct tun_dev_offer *ton, IDM_T tdn_state)
 {
 	TRACE_FUNCTION_CALL;
 
 	assertion(-500204, (ton));
 	assertion(-501452, (tdn_state == TDN_STATE_CATCHALL || tdn_state == TDN_STATE_DEDICATED));
 
-	assertion(-501453, (IMPLIES(tdn_state == TDN_STATE_CATCHALL, ton->tdnDedicated[0] || ton->tdnDedicated[1])));
-	assertion(-501453, (IMPLIES(tdn_state == TDN_STATE_DEDICATED, ton->tdnCatchAll[0] || ton->tdnCatchAll[1])));
+	assertion(-501453, (IMPLIES(tdn_state == TDN_STATE_CATCHALL, ton->tdnDedicated )));
+	assertion(-501453, (IMPLIES(tdn_state == TDN_STATE_CATCHALL, !ton->tdnCatchAll )));
+	assertion(-501453, (IMPLIES(tdn_state == TDN_STATE_DEDICATED, ton->tdnCatchAll)));
+	assertion(-501453, (IMPLIES(tdn_state == TDN_STATE_DEDICATED, !ton->tdnDedicated)));
 
 	struct avl_node *used_tnn_it = NULL;
-	struct tun_net_node *used_tnn;
+	struct tun_net_offer *used_tnn;
 	while ((used_tnn = avl_iterate_item(&ton->tun_net_tree, &used_tnn_it))) {
 
 		//		if (af == used_tnn->tunNetKey.netKey.af) {
@@ -319,12 +241,10 @@ void tun_out_state_catchAll(void *tonp)
 	prof_start(tun_out_state_catchAll, main);
 	assertion(-502327, (tun_dedicated_to > 0));
 
-	struct tun_out_node *ton = tonp;
-	struct tun_dev_node *tdn = ton->tdnDedicated[0] ? ton->tdnDedicated[0] : ton->tdnDedicated[1];
+	struct tun_dev_offer *ton = tonp;
+	struct tun_dev_out *tdn = ton->tdnDedicated;
 
 	assertion(-502328, (tdn));
-	assertion(-502329, IMPLIES(ton->tdnDedicated[0], ton->tdnDedicated[0] == tdn));
-	assertion(-502330, IMPLIES(ton->tdnDedicated[1], ton->tdnDedicated[1] == tdn));
 
 	IDM_T stats_captured = tdn->stats_captured;
 	unsigned long long tx_packets = tdn->stats.tx_packets;
@@ -386,7 +306,7 @@ void tun_out_catchAll_hook(int fd)
 				ntohs(isv4 ? tp.t.ip4hdr.tot_len : tp.t.ip6hdr.ip6_ctlun.ip6_un1.ip6_un1_plen),
 				isv4 ? ip4AsStr(tp.t.ip4hdr.saddr) : ip6AsStr(&tp.t.ip6hdr.ip6_src), ipXAsStr(af, dst));
 
-			struct tun_out_node *ton = NULL;
+			struct tun_dev_offer *ton = NULL;
 			struct avl_node *an = NULL;
 			struct tun_bit_node *tbn;
 			while ((tbn = avl_iterate_item(&tun_bit_tree, &an))) {
@@ -420,10 +340,10 @@ void tun_out_catchAll_hook(int fd)
 
 				// This should only work with IPv6 and non-local IPv6 src addresses. But it works always!!!!
 
-				assertion(-501530, (tbn->active_tdn && tbn->active_tdn == ton->tdnDedicated[isv4] && !ton->tdnDedicated[isv4]->tunCatch_fd));
+				assertion(-501530, (tbn->active_tdn && tbn->active_tdn == ton->tdnDedicated && !ton->tdnDedicated->tunCatch_fd));
 
 				struct tun_catch_key key = {.afKey = af};
-				struct tun_dev_node *tdn = avl_next_item(&tun_catch_tree, &key);
+				struct tun_dev_out *tdn = avl_next_item(&tun_catch_tree, &key);
 
 				if (tdn && tdn->tunCatchKey.afKey == af) {
 
@@ -434,7 +354,7 @@ void tun_out_catchAll_hook(int fd)
 						(written != tp_len) ? "Failed " : "",
 						isv4 ? ip4AsStr(tp.t.ip4hdr.daddr) : ip6AsStr(&tp.t.ip6hdr.ip6_dst),
 						tp_len, written, tdn->tunCatch_fd, tdn->nameKey.str,
-						ton->tdnDedicated[isv4]->nameKey.str,
+						ton->tdnDedicated->nameKey.str,
 						(written != tp_len) ? strerror(errno) : "");
 
 				} else {
@@ -495,82 +415,75 @@ void tun_out_catchAll_hook(int fd)
 	}
 }
 STATIC_FUNC
-struct tun_dev_node * tun_dev_out_del(struct tun_bit_node *tbn)
+struct tun_dev_out * tun_dev_out_del(struct tun_bit_node *tbn)
 {
 	TRACE_FUNCTION_CALL;
 
 	struct tun_search_node *tsn = tbn->tunBitKey.keyNodes.tsn;
-	struct tun_net_node *tnn = tbn->tunBitKey.keyNodes.tnn;
-	struct tun_out_node *ton = tnn->tunNetKey.ton;
+	struct tun_net_offer *tnn = tbn->tunBitKey.keyNodes.tnn;
+	struct tun_dev_offer *ton = tnn->tunNetKey.ton;
 	uint8_t af = tsn->net.af;
-	uint8_t isv4 = (af == AF_INET);
-	struct tun_dev_node *tdn = tbn->active_tdn;
+	struct tun_dev_out *tdn = tbn->active_tdn;
 
-	dbgf_track(DBGT_INFO, "tunnel dev=%s", tdn->nameKey.str);
+	assertion(-501463, (tdn));
+	dbgf_track(DBGT_INFO, "tunnel tsn=%s tnn=%s tonName=%s tonId=%d dev=%s catch_fd=%d tbnItems=%d",
+		tsn->nameKey, netAsStr(&tnn->tunNetKey.netKey), ton->tunOutKey.on->k.hostname, ton->tunOutKey.tun6Id,
+		tdn->nameKey.str, tdn->tunCatch_fd, tdn->tun_bit_tree.items);
 
-	assertion(-501460, (is_ip_set(&ton->localIp)));
+	assertion(-501460, (is_ip_set(&ton->remoteTunIp)));
 	assertion(-501461, (ton->tunOutKey.on));
 	assertion(-501462, (ton->tunOutKey.on != myKey->on));
-	assertion(-501463, (tdn));
 	assertion(-501464, (tdn->ifIdx));
 	assertion(-501465, (tdn->orig_mtu));
 	assertion(-501466, (tdn->nameKey.str[0]));
-	assertion(-501469, avl_find_item(&tdn->tun_bit_tree[isv4], &tbn->tunBitKey.keyNodes));
+	assertion(-501469, avl_find_item(&tdn->tun_bit_tree, &tbn->tunBitKey.keyNodes));
 
 	if (tdn->tunCatch_fd) {
 
 		assertion(-501467, (tdn->tunCatchKey.afKey == af));
 		assertion(-501468, (tdn->tunCatch_fd > 0));
 
-		avl_remove(&tdn->tun_bit_tree[isv4], &tbn->tunBitKey.keyNodes, -300526);
+		avl_remove(&tdn->tun_bit_tree, &tbn->tunBitKey.keyNodes, -300526);
 
 		struct avl_node *an = NULL;
 		struct tun_bit_node *ton_tbn;
-		while ((ton_tbn = avl_iterate_item(&tdn->tun_bit_tree[isv4], &an)) && ton_tbn->tunBitKey.keyNodes.tnn->tunNetKey.ton != ton);
+		while ((ton_tbn = avl_iterate_item(&tdn->tun_bit_tree, &an)) && ton_tbn->tunBitKey.keyNodes.tnn->tunNetKey.ton != ton);
 		if (!ton_tbn)
-			ton->tdnCatchAll[isv4] = NULL;
+			ton->tdnCatchAll = NULL;
 
-		if (!tdn->tun_bit_tree[isv4].items) {
+		if (!tdn->tun_bit_tree.items) {
 
 			set_fd_hook(tdn->tunCatch_fd, tun_out_catchAll_hook, DEL);
 
-			avl_remove(&tdn->tunCatchKey.tin->tun_dev_tree, &tdn->nameKey, -300555);
-
 			// always keep one per each address family for re-sending catched packets (via tun_dflt):
-//			if (!is_ip_equal(&tdnActive->tunCatchKey.srcIp, (isv4?&tun4_address.ip:&tun6_address.ip))) {
-			struct tun_catch_key catchKey = {.afKey = af};
-			struct tun_dev_node *afTdn1, *afTdn2;
-			if (((afTdn1 = avl_next_item(&tun_catch_tree, &catchKey)) && afTdn1->tunCatchKey.afKey == af) &&
-				((afTdn2 = avl_next_item(&tun_catch_tree, &afTdn1->tunCatchKey)) && afTdn2->tunCatchKey.afKey == af)) {
+			//if (!is_ip_equal(&tdnActive->tunCatchKey.srcIp, (isv4?&tun4_address.ip:&tun6_address.ip))) {
+			//struct tun_catch_key catchKey = {.afKey = af};
+			//struct tun_dev_out *afTdn1, *afTdn2;
+			//if (((afTdn1 = avl_next_item(&tun_catch_tree, &catchKey)) && afTdn1->tunCatchKey.afKey == af) &&
+			//	((afTdn2 = avl_next_item(&tun_catch_tree, &afTdn1->tunCatchKey)) && afTdn2->tunCatchKey.afKey == af)) {
 
 				avl_remove(&tun_catch_tree, &tdn->tunCatchKey, -300527);
 				kernel_dev_tun_del(tdn->nameKey.str, tdn->tunCatch_fd);
 				debugFree(tdn, -300528);
-			}
+			//"}
 		}
 
 	} else { //dedicated:
 
-		assertion(-501468, (tdn == ton->tdnDedicated[isv4]));
-		assertion(-501470, IMPLIES(tdn != ton->tdnDedicated[!isv4], ton->tdnDedicated[!isv4] == NULL));
+		assertion(-501468, (tdn == ton->tdnDedicated));
 
-		avl_remove(&tdn->tun_bit_tree[isv4], &tbn->tunBitKey.keyNodes, -300548);
+		avl_remove(&tdn->tun_bit_tree, &tbn->tunBitKey.keyNodes, -300548);
 
-		if (!tdn->tun_bit_tree[isv4].items) {
+		if (!tdn->tun_bit_tree.items) {
 
-			ton->tdnDedicated[isv4] = NULL;
+			ton->tdnDedicated = NULL;
 
-			if (!tdn->tun_bit_tree[!isv4].items) {
-				assertion(-501532, (!ton->tdnDedicated[!isv4]));
 
-				avl_remove(&tdn->tunCatchKey.tin->tun_dev_tree, &tdn->nameKey, -300556);
+			IDM_T result = kernel_tun_del(tdn->nameKey.str);
+			assertion(-501471, (result == SUCCESS));
+			debugFree(tdn, -300531);
 
-				IDM_T result = kernel_tun_del(tdn->nameKey.str);
-				assertion(-501471, (result == SUCCESS));
-				debugFree(tdn, -300531);
-
-				task_remove(tun_out_state_catchAll, ton);
-			}
+			task_remove(tun_out_state_catchAll, ton);
 
 		}
 	}
@@ -578,22 +491,127 @@ struct tun_dev_node * tun_dev_out_del(struct tun_bit_node *tbn)
 	return(tbn->active_tdn = NULL);
 }
 
-STATIC_FUNC
-IDM_T assert_tbn_ton_tdn(IDM_T isv4, struct tun_out_node *ton, struct tun_bit_node *tbn)
+struct tun_net_offer * find_overlapping_tun( struct net_key *try, struct orig_node *except, struct ctrl_node *cn )
 {
+        struct tun_net_offer *tnn;
+        struct avl_node *it = NULL;
 
+        while ((tnn = avl_iterate_item(&tun_net_tree, &it))) {
+
+		struct tun_net_offer_key *tnk = &tnn->tunNetKey;
+
+		dbgf_cn(cn, DBGL_CHANGES, DBGT_INFO, "try=%s net=%s orig=%s",
+			netAsStr(try), netAsStr(&tnk->netKey), tnk->ton->tunOutKey.on->k.hostname);
+
+                if (tnk->ton->tunOutKey.on != except &&
+			is_ip_net_equal(&try->ip, &tnk->netKey.ip, XMIN(try->mask, tnk->netKey.mask), try->af))
+                        return tnn;
+        }
+        return NULL;
+}
+
+
+STATIC_FUNC
+struct net_key *_find_free_local_prefix(struct net_key *range, uint8_t mask, struct net_key * result, struct ctrl_node *cn)
+{
+	if (result && result->af == range->af && result->mask == mask && result->mask >= range->mask &&
+		is_ip_net_equal(&result->ip, &range->ip, range->mask, range->af)) {
+
+		dbgf_sys(DBGT_INFO, "Reusing %s within %s", netAsStr(result), netAsStr(range));
+		return result;
+	}
+
+	uint8_t rangeMask = (range->af == AF_INET) ? ((128 - 32) + range->mask) : range->mask;
+	uint8_t subMask = (range->af == AF_INET) ? ((128 - 32) + mask) : mask;
+
+	uint8_t revMaskHave = 128 - rangeMask;
+	uint8_t revMaskWant = 128 - subMask;
+
+	if (revMaskHave >= revMaskWant) {
+		uint8_t revMaskOpts = revMaskHave - revMaskWant;
+		uint64_t revMaskRand = 0x1122334455667788;
+//		uint64_t revMaskRand = 0xFFFFFFFFFFFFFFFF;
+//		cryptRand(&revMaskRand, sizeof(revMaskRand));
+		uint8_t revMaskZeros = (revMaskOpts <= 64) ? (64-revMaskOpts) : 0;
+
+		revMaskRand = (revMaskZeros >= 64) ? 0 : ((revMaskRand) >> revMaskZeros);
+
+
+		uint64_t revMaskTry = revMaskRand;
+		uint64_t netRand = hton64(revMaskRand);
+		dbgf_cn(cn, DBGL_ALL, DBGT_INFO, "have=%d want=%d opts=%d zeros=%d rand=%s", 
+			revMaskHave, revMaskWant, revMaskOpts, revMaskZeros, memAsHexStringSep(&netRand, sizeof(netRand), 4, ":"));
+
+		static struct net_key found;
+		found.ip = ZERO_IP;
+		found.af = range->af;
+		found.mask = mask;
+
+		do {
+			uint64_t ip[2] = {
+				hton64(rangeMask >= 64 ? 0 : (revMaskZeros >= 64 ? 0 : ((revMaskTry << revMaskZeros) >> rangeMask))),
+				hton64(revMaskWant >= 64 ? 0 : (revMaskTry << revMaskWant))};
+
+			found.ip = *((IP6_T*)&ip[0]);
+			found.ip.s6_addr32[0] |= range->ip.s6_addr32[0];
+			found.ip.s6_addr32[1] |= range->ip.s6_addr32[1];
+			found.ip.s6_addr32[2] |= range->ip.s6_addr32[2];
+			found.ip.s6_addr32[3] |= range->ip.s6_addr32[3];
+			found.ip.s6_addr32[3] |= htonl(1);
+
+			dbgf_cn(cn, DBGL_CHANGES, DBGT_INFO, "Trying %s within %s", netAsStr(&found), netAsStr(range));
+//			assertion(-500000, is_ip_net_equal(&find.ip, &range->ip, range->mask, range->af));
+//			assertion(-500000, range->mask <= find.mask);
+
+			if (!(
+				find_overlapping_hna( &found.ip, subMask, myKey->on) ||
+				find_overlapping_tun( &found, myKey->on, cn)
+				)) {
+
+				dbgf_cn(cn, DBGL_CHANGES, DBGT_INFO, "Found=%s (%s/%d) from range=%s (%s/%d)",
+					netAsStr(&found), memAsHexStringSep(&found.ip, sizeof(found.ip), 4, ":"), subMask,
+					netAsStr(range), memAsHexStringSep(&range->ip, sizeof(range->ip), 4, ":"), rangeMask);
+				IDM_T TODO_ReVerify_this_when_others_annoucements_changed;
+
+				if (result)
+					*result = found;
+
+				return &found;
+			}
+
+			revMaskTry++;
+			revMaskTry &= (~(U64_MAX<<revMaskOpts));
+
+		} while ( revMaskTry != revMaskRand );
+	}
+
+	return NULL;
+}
+
+
+IDM_T assert_tbn_ton_tdn(IDM_T isv4, struct tun_dev_offer *ton, struct tun_bit_node *tbn)
+{
+	uint8_t af = (isv4 ? AF_INET : AF_INET6);
 	assertion(-501546, (ton));
-	assertion(-501547, IMPLIES(ton->tdnCatchAll[isv4], ton->tdnCatchAll[isv4]->tunCatchKey.tin));
-	assertion(-501548, IMPLIES(ton->tdnCatchAll[isv4], ton->tdnCatchAll[isv4]->tunCatchKey.tin->tunAddr46[isv4].mask));
-	assertion(-501549, IMPLIES(ton->tdnCatchAll[isv4], is_ip_set(&(ton->tdnCatchAll[isv4]->tunCatchKey.tin->tunAddr46[isv4].ip))));
-	assertion(-501550, IMPLIES(ton->tdnCatchAll[isv4], ton->tdnCatchAll[isv4]->tunCatchKey.tin->tunAddr46[isv4].mask >= ton->ingressPrefix[isv4].mask));
-	assertion(-501551, IMPLIES(ton->tdnCatchAll[isv4], is_ip_net_equal(&ton->tdnCatchAll[isv4]->tunCatchKey.tin->tunAddr46[isv4].ip, &ton->ingressPrefix[isv4].ip, ton->ingressPrefix[isv4].mask, isv4 ? AF_INET : AF_INET6)));
+	struct tun_dev_out *tdoC = ton->tdnCatchAll;
+	struct tun_dev_in *tdiC = tdoC ? tdoC->tunCatchKey.tin : NULL;
+	assertion(-501547, IMPLIES(tdoC, tdiC));
+	assertion(-500000, IMPLIES(tdoC, tdiC == ton->tin));
+	assertion(-500000, IMPLIES(tdoC, tdiC->tunAddr.af == af));
+	assertion(-501548, IMPLIES(tdoC, tdiC->tunAddr.mask));
+	assertion(-501549, IMPLIES(tdoC, is_ip_set(&(tdiC->tunAddr.ip))));
+	assertion(-501550, IMPLIES(tdoC, tdiC->tunAddr.mask >= ton->ingressPrefix.mask));
+	assertion(-501551, IMPLIES(tdoC, is_ip_net_equal(&tdiC->tunAddr.ip, &ton->ingressPrefix.ip, ton->ingressPrefix.mask, af)));
 
-	assertion(-501552, IMPLIES(ton->tdnDedicated[isv4], ton->tdnDedicated[isv4]->tunCatchKey.tin));
-	assertion(-501553, IMPLIES(ton->tdnDedicated[isv4], ton->tdnDedicated[isv4]->tunCatchKey.tin->tunAddr46[isv4].mask));
-	assertion(-501554, IMPLIES(ton->tdnDedicated[isv4], is_ip_set(&(ton->tdnDedicated[isv4]->tunCatchKey.tin->tunAddr46[isv4].ip))));
-	assertion(-501555, IMPLIES(ton->tdnDedicated[isv4], ton->tdnDedicated[isv4]->tunCatchKey.tin->tunAddr46[isv4].mask >= ton->ingressPrefix[isv4].mask));
-	assertion(-501556, IMPLIES(ton->tdnDedicated[isv4], is_ip_net_equal(&ton->tdnDedicated[isv4]->tunCatchKey.tin->tunAddr46[isv4].ip, &ton->ingressPrefix[isv4].ip, ton->ingressPrefix[isv4].mask, isv4 ? AF_INET : AF_INET6)));
+	struct tun_dev_out *tdoD = ton->tdnDedicated;
+	struct tun_dev_in *tdiD = tdoD ? tdoD->tunCatchKey.tin : NULL;
+	assertion(-501552, IMPLIES(tdoD, tdiD));
+	assertion(-500000, IMPLIES(tdoD, tdiD == ton->tin));
+	assertion(-500000, IMPLIES(tdoD, tdiD->tunAddr.af == af));
+	assertion(-501553, IMPLIES(tdoD, tdiD->tunAddr.mask));
+	assertion(-501554, IMPLIES(tdoD, is_ip_set(&(tdiD->tunAddr.ip))));
+	assertion(-501555, IMPLIES(tdoD, tdiD->tunAddr.mask >= ton->ingressPrefix.mask));
+	assertion(-501556, IMPLIES(tdoD, is_ip_net_equal(&tdiD->tunAddr.ip, &ton->ingressPrefix.ip, ton->ingressPrefix.mask, af)));
 
 	assertion(-501557, IMPLIES(tbn, tbn->tunBitKey.keyNodes.tnn));
 	assertion(-501558, IMPLIES(tbn, ton == tbn->tunBitKey.keyNodes.tnn->tunNetKey.ton));
@@ -601,55 +619,21 @@ IDM_T assert_tbn_ton_tdn(IDM_T isv4, struct tun_out_node *ton, struct tun_bit_no
 	return YES;
 }
 
-STATIC_FUNC
-struct tun_in_node *find_matching_tun_in_node(IDM_T isv4, struct tun_search_node *tsn, struct tun_out_node *ton)
-{
-	struct tun_dev_node *tdn;
-	struct tun_in_node *tin;
-	struct avl_node *an = NULL;
-
-	assertion(-501560, assert_tbn_ton_tdn(isv4, ton, NULL));
-
-	if ((tdn = (ton->tdnDedicated[isv4] ? ton->tdnDedicated[isv4] : ton->tdnCatchAll[isv4])))
-		return tdn->tunCatchKey.tin;
-
-
-
-	while ((tin = avl_iterate_item(&tun_in_tree, &an))) {
-
-		struct net_key tinAddr = tin->tunAddr46[isv4];
-
-		if (!tinAddr.mask)
-			continue;
-
-		else if (!ton->ingressPrefix[isv4].mask)
-			return tin;
-
-		else if (tinAddr.mask >= ton->ingressPrefix[isv4].mask &&
-			is_ip_net_equal(&tinAddr.ip, &ton->ingressPrefix[isv4].ip, ton->ingressPrefix[isv4].mask, isv4 ? AF_INET : AF_INET6))
-			return tin;
-
-	}
-
-	return NULL;
-}
 
 STATIC_FUNC
-struct tun_dev_node *tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
+struct tun_dev_out *_tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
 {
 	TRACE_FUNCTION_CALL;
 
-	struct tun_search_node *tsn = tbn->tunBitKey.keyNodes.tsn;
-	struct tun_net_node *tnn = tbn->tunBitKey.keyNodes.tnn;
-	struct tun_out_node *ton = tnn->tunNetKey.ton;
-	uint8_t isv4 = (tsn->net.af == AF_INET);
-	struct tun_dev_node *tdn = tbn->active_tdn;
+	uint8_t isv4 = (tbn->tunBitKey.keyNodes.tsn->net.af == AF_INET);
+	struct tun_dev_offer *ton = tbn->tunBitKey.keyNodes.tnn->tunNetKey.ton;
+	struct tun_dev_out *tdn = tbn->active_tdn;
 
-	struct tun_in_node *tin = find_matching_tun_in_node(isv4, tsn, ton);
+//	struct tun_in_node *tin = find_matching_tun_in_node(tsn, ton);
+	struct tun_dev_in *tin = ton->tin;
+	assertion(-501472, (tin && is_ip_set(&tin->tunAddr.ip)));
 
-	assertion(-501472, (tin && is_ip_set(&tin->tunAddr46[isv4].ip)));
-
-	assertion(-501524, (is_ip_set(&ton->localIp)));
+	assertion(-501524, (is_ip_set(&ton->remoteTunIp)));
 	assertion(-501235, (ton->tunOutKey.on));
 	assertion(-501321, (ton->tunOutKey.on != myKey->on));
 	assertion(-501343, (is_ip_set(&ton->tunOutKey.on->primary_ip)));
@@ -662,7 +646,7 @@ struct tun_dev_node *tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
 		(tdn_state == TDN_STATE_CURRENT && (tdn ? (tdn->tunCatch_fd > 0) : (!tdn && tun_dedicated_to > 0)))) {
 
 		//set TDN_STATE_CATCHALL
-		struct tun_catch_key tunCatchKey2 = {.afKey = tsn->net.af, .tin = tin};
+		struct tun_catch_key tck = {.afKey = (isv4 ? AF_INET : AF_INET6), .tin = tin};
 
 
 		if (tdn && !tdn->tunCatch_fd)
@@ -670,46 +654,41 @@ struct tun_dev_node *tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
 
 		if (!tdn) {
 
-			if (!(tdn = avl_find_item(&tun_catch_tree, &tunCatchKey2))) {
+			if (!(tdn = avl_find_item(&tun_catch_tree, &tck))) {
 
-				assertion(-501561, (!ton->tdnCatchAll[isv4]));
+				assertion(-501561, (!ton->tdnCatchAll));
 
-				tdn = debugMalloc(sizeof(struct tun_dev_node), -300532);
-				memset(tdn, 0, sizeof(struct tun_dev_node));
-				AVL_INIT_TREE(tdn->tun_bit_tree[0], struct tun_bit_node, tunBitKey.keyNodes);
-				AVL_INIT_TREE(tdn->tun_bit_tree[1], struct tun_bit_node, tunBitKey.keyNodes);
+				tdn = debugMallocReset(sizeof(struct tun_dev_out), -300532);
+				AVL_INIT_TREE(tdn->tun_bit_tree, struct tun_bit_node, tunBitKey.keyNodes);
 
 				tdn->nameKey = tun_out_get_free_name(isv4 ? DEF_TUN_NAME_TYPE_CATCH4 : DEF_TUN_NAME_TYPE_CATCH6, tin->nameKey.str + strlen(tun_name_prefix.str));
 				tdn->ifIdx = kernel_dev_tun_add(tdn->nameKey.str, &tdn->tunCatch_fd, isv4 ? 1 : 0);
 				tdn->orig_mtu = kernel_get_mtu(tdn->nameKey.str);
 				tdn->curr_mtu = set_tun_out_mtu(tdn->nameKey.str, tdn->orig_mtu, DEF_TUN_OUT_MTU, tun_out_mtu);
 
-				kernel_set_addr(ADD, tdn->ifIdx, isv4 ? AF_INET : AF_INET6, &tin->tunAddr46[isv4].ip, isv4 ? 32 : 128, NO/*deprecated*/);
+				kernel_set_addr(ADD, tdn->ifIdx, isv4 ? AF_INET : AF_INET6, &tin->tunAddr.ip, isv4 ? 32 : 128, NO/*deprecated*/);
 
-				avl_insert(&tin->tun_dev_tree, tdn, -300557);
-
-				tdn->tunCatchKey = tunCatchKey2;
+				tdn->tunCatchKey = tck;
 				avl_insert(&tun_catch_tree, tdn, -300533);
 			}
 
-			if (!tdn->tun_bit_tree[0].items && !tdn->tun_bit_tree[1].items)
+			if (!tdn->tun_bit_tree.items)
 				set_fd_hook(tdn->tunCatch_fd, tun_out_catchAll_hook, ADD);
 
-			avl_insert(&tdn->tun_bit_tree[isv4], tbn, -300534);
+			avl_insert(&tdn->tun_bit_tree, tbn, -300534);
 
-			assertion(-501534, IMPLIES(ton->tdnCatchAll[isv4], ton->tdnCatchAll[isv4] == tdn));
-			ton->tdnCatchAll[isv4] = tdn;
+			assertion(-501534, IMPLIES(ton->tdnCatchAll, ton->tdnCatchAll == tdn));
+			ton->tdnCatchAll = tdn;
 		}
 
 		assertion(-501474, (tdn));
 		assertion(-501475, (tdn->tunCatch_fd > 0));
 		assertion(-501476, (tdn->ifIdx > 0));
 		assertion(-501477, (tdn->orig_mtu >= MIN_TUN_OUT_MTU));
-		assertion(-501562, (tunCatchKey2.afKey == tsn->net.af));
-		assertion(-501479, (is_ip_set(&tin->tunAddr46[isv4].ip)));
-		assertion(-501481, (avl_find_item(&tun_catch_tree, &tunCatchKey2)));
-		assertion(-501482, (avl_find_item(&tdn->tun_bit_tree[isv4], &tbn->tunBitKey.keyNodes)));
-		assertion(-501536, (ton->tdnCatchAll[isv4] == tdn));
+		assertion(-501479, (is_ip_set(&tin->tunAddr.ip)));
+		assertion(-501481, (avl_find_item(&tun_catch_tree, &tck)));
+		assertion(-501482, (avl_find_item(&tdn->tun_bit_tree, &tbn->tunBitKey.keyNodes)));
+		assertion(-501536, (ton->tdnCatchAll == tdn));
 
 	} else if (tdn_state == TDN_STATE_DEDICATED ||
 		(tdn_state == TDN_STATE_CURRENT && (tdn ? (tdn->tunCatch_fd == 0) : (tun_dedicated_to == 0)))) {
@@ -719,17 +698,15 @@ struct tun_dev_node *tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
 
 		if (!tdn) {
 
-			if (!((tdn = ton->tdnDedicated[isv4]) || (tdn = ton->tdnDedicated[!isv4]))) {
+			if (!(tdn = ton->tdnDedicated)) {
 
-				assertion(-501563, (!ton->tdnDedicated[isv4]));
+				assertion(-501563, (!ton->tdnDedicated));
 
-				tdn = debugMalloc(sizeof(struct tun_dev_node), -300535);
-				memset(tdn, 0, sizeof(struct tun_dev_node));
-				AVL_INIT_TREE(tdn->tun_bit_tree[0], struct tun_bit_node, tunBitKey.keyNodes);
-				AVL_INIT_TREE(tdn->tun_bit_tree[1], struct tun_bit_node, tunBitKey.keyNodes);
+				tdn = debugMallocReset(sizeof(struct tun_dev_out), -300535);
+				AVL_INIT_TREE(tdn->tun_bit_tree, struct tun_bit_node, tunBitKey.keyNodes);
 
 				tdn->nameKey = tun_out_get_free_name(DEF_TUN_NAME_TYPE_OUT, cryptShaAsString(&ton->tunOutKey.on->k.nodeId));
-				tdn->ifIdx = kernel_tun_add(tdn->nameKey.str, IPPROTO_IP, &ton->localIp, &ton->remoteIp);
+				tdn->ifIdx = kernel_tun_add(tdn->nameKey.str, IPPROTO_IP, &myKey->on->primary_ip, &ton->remoteTunIp);
 				tdn->orig_mtu = kernel_get_mtu(tdn->nameKey.str);
 				tdn->curr_mtu = set_tun_out_mtu(tdn->nameKey.str, tdn->orig_mtu, DEF_TUN_OUT_MTU, tun_out_mtu);
 
@@ -738,28 +715,22 @@ struct tun_dev_node *tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
 				assertion(-501485, (tdn->ifIdx > 0));
 				assertion(-501486, (tdn->orig_mtu >= MIN_TUN_OUT_MTU));
 				assertion(-501487, (!tdn->tunCatch_fd));
+				assertion(-500000, (tin->tunAddr.mask));
 
-				kernel_set_addr(ADD, tdn->ifIdx, AF_INET6, &ton->localIp, 128, YES /*deprecated*/);
-
-				if (tin->tunAddr46[1].mask)
-					kernel_set_addr(ADD, tdn->ifIdx, AF_INET, &tin->tunAddr46[1].ip, 32, NO/*deprecated*/);
-
-				if (tin->tunAddr46[0].mask)
-					kernel_set_addr(ADD, tdn->ifIdx, AF_INET6, &tin->tunAddr46[0].ip, 128, NO/*deprecated*/);
-
-				avl_insert(&tin->tun_dev_tree, tdn, -300558);
+				kernel_set_addr(ADD, tdn->ifIdx, AF_INET6, &myKey->on->primary_ip, 128, YES/*deprecated*/);
+				kernel_set_addr(ADD, tdn->ifIdx, AF_INET, &tin->tunAddr.ip, (isv4 ? 32 : 128), NO/*deprecated*/);
 
 				tdn->tunCatchKey.tin = tin;
 			}
 
-			avl_insert(&tdn->tun_bit_tree[isv4], tbn, -300549);
+			avl_insert(&tdn->tun_bit_tree, tbn, -300549);
 
-			assertion(-501537, IMPLIES(ton->tdnDedicated[isv4], ton->tdnDedicated[isv4] == tdn));
-			ton->tdnDedicated[isv4] = tdn;
+			assertion(-501537, IMPLIES(ton->tdnDedicated, ton->tdnDedicated == tdn));
+			ton->tdnDedicated = tdn;
 		}
 
 		assertion(-501484, (tdn));
-		assertion(-501538, (ton->tdnDedicated[isv4] == tdn));
+		assertion(-501538, (ton->tdnDedicated == tdn));
 
 		task_remove(tun_out_state_catchAll, ton);
 
@@ -840,8 +811,8 @@ void configure_tun_bit(uint8_t del, struct tun_bit_node *tbn, IDM_T tdn_state)
 	TRACE_FUNCTION_CALL;
 
 	struct tun_search_node *tsn = tbn->tunBitKey.keyNodes.tsn;
-	struct tun_net_node *tnn = tbn->tunBitKey.keyNodes.tnn;
-	struct tun_out_node *ton = tnn->tunNetKey.ton;
+	struct tun_net_offer *tnn = tbn->tunBitKey.keyNodes.tnn;
+	struct tun_dev_offer *ton = tnn->tunNetKey.ton;
 	//uint8_t isv4 = (tsn->net.af==AF_INET);
 	uint8_t rtype = tsn->routeSetProto;
 	struct net_key routeKey = tbn->tunBitKey.invRouteKey;
@@ -855,7 +826,10 @@ void configure_tun_bit(uint8_t del, struct tun_bit_node *tbn, IDM_T tdn_state)
 		rtep = &rte;
 	}
 
-	int dbgl = DBGL_CHANGES;
+	dbgf(DBGL_CHANGES, DBGT_INFO, "%s %s via nodeId=%s asDfltTun=%d tbn_active=%s",
+		del ? "DEL" : "ADD", netAsStr(&routeKey), cryptShaAsString(&ton->tunOutKey.on->k.nodeId),
+		tdn_state, tbn->active_tdn ? tbn->active_tdn->nameKey.str : "---");
+
 
 	assertion(-501490, (tsn->net.af == tnn->tunNetKey.netKey.af));
 	assertion(-501491, (tsn->net.af == tbn->tunBitKey.invRouteKey.af));
@@ -874,93 +848,196 @@ void configure_tun_bit(uint8_t del, struct tun_bit_node *tbn, IDM_T tdn_state)
 		if (tbn->active_tdn)
 			iproute((IP_ROUTE_TUNS + rtype), DEL, NO, &routeKey, tbn->ipTable, 0, tbn->active_tdn->ifIdx, NULL, NULL, ntohl(tbn->tunBitKey.beIpMetric), rtep);
 
-		tun_dev_out_add(tbn, tdn_state);
+		_tun_dev_out_add(tbn, tdn_state);
 		assertion(-501540, (tbn->active_tdn));
 		iproute((IP_ROUTE_TUNS + rtype), ADD, NO, &routeKey, tbn->ipTable, 0, tbn->active_tdn->ifIdx, NULL, NULL, ntohl(tbn->tunBitKey.beIpMetric), rtep);
-
-	} else {
-		dbgl = DBGL_ALL;
 	}
+}
 
-	dbgf(dbgl, DBGT_INFO, "%s %s via nodeId=%s asDfltTun=%d tbn_active=%s",
-		del ? "DEL" : "ADD", netAsStr(&routeKey), cryptShaAsString(&ton->tunOutKey.on->k.nodeId),
-		tdn_state, tbn->active_tdn ? tbn->active_tdn->nameKey.str : "---");
+STATIC_FUNC
+IDM_T match_tsn_requirements(struct tun_search_node *tsn, struct tun_net_offer *tnn)
+{
+	struct orig_node *on = tnn->tunNetKey.ton->tunOutKey.on;
+	struct net_key *tnn_netKey = &tnn->tunNetKey.netKey;
+	struct net_key *ingressPrefix = &tnn->tunNetKey.ton->ingressPrefix;
+
+	dbgf_track(DBGT_INFO, "checking network=%s bw_fmu8=%d, ingress=%s remoteTunIp=%s tun6Id=%d from nodeId=%s hostname=%s",
+		netAsStr(tnn_netKey), tnn->bandwidth.val.u8, netAsStr(ingressPrefix),
+		ip6AsStr(&tnn->tunNetKey.ton->remoteTunIp), tnn->tunNetKey.ton->tunOutKey.tun6Id,
+		cryptShaAsString(&on->k.nodeId), on->k.hostname);
+
+	return (
+		(tsn->routeSearchProto == TYP_TUN_PROTO_ALL || tsn->routeSearchProto == tnn->tunNetKey.bmx7RouteType) &&
+		tsn->net.af == tnn_netKey->af &&
+		(tsn->netPrefixMax == TYP_TUN_OUT_PREFIX_NET ?
+		tsn->net.mask >= tnn_netKey->mask : tsn->netPrefixMax >= tnn_netKey->mask) &&
+		(tsn->netPrefixMin == TYP_TUN_OUT_PREFIX_NET ?
+		tsn->net.mask <= tnn_netKey->mask : tsn->netPrefixMin <= tnn_netKey->mask) &&
+		is_ip_net_equal(&tsn->net.ip, &tnn_netKey->ip, XMIN(tsn->net.mask, tnn_netKey->mask), tnn_netKey->af) &&
+		IMPLIES(strlen(tsn->gwName), !strcmp(tsn->gwName, on->k.hostname)) &&
+		IMPLIES(!is_zero(&tsn->gwId, sizeof(GLOBAL_ID_T)), cryptShasEqual(&tsn->gwId, &on->k.nodeId)) &&
+		(!ingressPrefix->mask || !tsn->srcRtNet.mask || (
+		tsn->srcRtNet.mask >= ingressPrefix->mask && IMPLIES(ingressPrefix->af, ingressPrefix->af == tsn->net.af) &&
+		is_ip_net_equal(&tsn->srcRtNet.ip, &ingressPrefix->ip, ingressPrefix->mask, ingressPrefix->af)))
+		);
 
 }
 
 STATIC_FUNC
-void _add_tun_bit_node(struct tun_search_node *tsna, struct tun_net_node *tnna)
+void _assign_ton_in_nodes(void) {
+
+	struct avl_node *an = NULL;
+	struct tun_dev_in *tin;
+	while ((tin = avl_iterate_item(&tun_in_tree, &an))) {
+		struct tun_search_node *tsn;
+
+		dbgf_track(DBGT_INFO, "Checking af=%d tunIn=%s seachName=%s mode=%d localPrefix=%s<=%d addr=%s",
+			tin->af, tin->nameKey.str, tin->tunSearchNameKey, tin->localPrefixMode,
+			netAsStr(&tin->localPrefix), tin->localPrefixMax, netAsStr(&tin->tunAddr));
+
+		if (!(
+			tin->localPrefixMode == TYP_TUN_DEV_MODE_AUTO &&
+			strlen(tin->tunSearchNameKey) &&
+			(tsn = avl_find_item(&tun_search_tree, tin->tunSearchNameKey)) &&
+			(!strcmp(tsn->tunInNameKey.str, tin->nameKey.str)) &&
+			(!is_zero(&tsn->gwId, sizeof(tsn->gwId))) &&
+			(tsn->net.af == tin->af)
+			))
+			continue;
+
+		struct tun_dev_offer *ton;
+		struct tun_dev_offer_key tok = {.on = avl_find_item(&orig_tree, &tsn->gwId), .tun6Id = 0 };
+		for (; (tok.on && (ton = avl_find_item(&tun_out_tree, &tok))); tok.tun6Id++) {
+
+			struct net_key *ingress = &ton->ingressPrefix;
+
+			dbgf_track(DBGT_INFO, "Checking ton name=%s tunId=%d mode=%d srcOffer=%s>=%d ingress=%s",
+				ton->tunOutKey.on->k.hostname, ton->tunOutKey.tun6Id,
+				ton->remoteMode, netAsStr(&ton->remotePrefix), ton->remotePrefixMin, netAsStr(ingress));
+
+			if (!(
+				!ton->tin &&
+				ton->remoteMode == TYP_TUN_DEV_MODE_AUTO &&
+				ton->remotePrefix.af == tin->af &&
+				tin->localPrefixMax >= ton->remotePrefixMin &&
+				ton->remotePrefixMin >= ton->remotePrefix.mask &&
+				tin->localPrefix.mask <= ton->remotePrefix.mask &&
+				is_ip_net_equal(&tin->localPrefix.ip, &ton->remotePrefix.ip, tin->localPrefix.mask, tin->af) &&
+				IMPLIES(ingress->af, (ingress->af == ton->remotePrefix.af)) &&
+				IMPLIES(ingress->mask, (ton->remotePrefix.mask >= ingress->mask && is_ip_net_equal(&ton->remotePrefix.ip, &ingress->ip, ingress->mask, ingress->af)))
+				))
+				continue;
+
+			struct tun_net_offer *tnn;
+			struct avl_node *itnn = NULL;
+			while ((tnn = avl_iterate_item(&ton->tun_net_tree, &itnn)) && !match_tsn_requirements(tsn, tnn));
+			struct net_key result = tin->tunAddr;
+			dbgf_track(DBGT_INFO, "Matching net=%s", tnn ? netAsStr(&tnn->tunNetKey.netKey) : NULL);
+
+			if (tnn && 
+				(result.mask || _find_free_local_prefix(&ton->remotePrefix, tin->localPrefixMax, &result, NULL)) &&
+				IMPLIES(ingress->af, (ingress->af == result.af)) &&
+				IMPLIES(ingress->mask, (result.mask >= ingress->mask && is_ip_net_equal(&result.ip, &ingress->ip, ingress->mask, ingress->af)))
+				) {
+
+				ton->tin = tin;
+				avl_insert(&tin->tun_dev_offer_tree, ton, -300000);
+
+				if (!tin->tunAddr.mask) {
+					tin->tunAddr = result;
+					kernel_set_addr(ADD, tin->upIfIdx, result.af, &result.ip, (result.af == AF_INET ? 32 : 128), NO /*deprecated*/);
+					my_description_changed = YES;
+				}
+
+				dbgf_track(DBGT_INFO, "Found");
+			}
+		}
+	}
+}
+
+STATIC_FUNC
+struct tun_dev_in *_find_matching_tun_in_node(struct tun_search_node *tsn, struct tun_dev_offer *ton)
+{
+	struct avl_node *an = NULL;
+	struct net_key ingressPrefix = ton->ingressPrefix;
+	struct tun_dev_in *tin = NULL;
+
+	assertion(-501560, assert_tbn_ton_tdn((tsn->net.af == AF_INET), ton, NULL));
+
+//	struct tun_dev_node *tdn;
+//	if ((tdn = (ton->tdnDedicated46[isv4] ? ton->tdnDedicated46[isv4] : ton->tdnCatchAll46[isv4])))
+//		return tdn->tunCatchKey.tin;
+
+	while ((tin = (ton->tin ? ton->tin : avl_iterate_item(&tun_in_tree, &an)))) {
+
+		if ((tin->tunAddr.mask) && (tin->tunAddr.af == tsn->net.af) &&
+			!(strlen(tsn->tunInNameKey.str) && strcmp(tsn->tunInNameKey.str, tin->nameKey.str)) &&
+			IMPLIES(ingressPrefix.af, ingressPrefix.af == tsn->net.af) &&
+			IMPLIES(ingressPrefix.mask, (tin->tunAddr.mask >= ingressPrefix.mask &&
+			is_ip_net_equal(&tin->tunAddr.ip, &ingressPrefix.ip, ingressPrefix.mask, ingressPrefix.af)))) {
+
+			dbgf_track(DBGT_INFO, "Found %s tin address=%s", ton->tin ? "OLD" : "NEW", netAsStr(&tin->tunAddr));
+
+			if (!ton->tin) {
+				ton->tin = tin;
+				avl_insert(&tin->tun_dev_offer_tree, ton, -300000);
+			}
+			assertion(-500000, (ton->tin == tin));
+			return tin;
+		}
+
+		if (ton->tin)
+			break;
+	}
+	dbgf_track(DBGT_INFO, "None found");
+	return NULL;
+}
+
+
+STATIC_FUNC
+void _add_tun_bit_node(struct tun_search_node *tsna, struct tun_net_offer *tnna)
 {
 	TRACE_FUNCTION_CALL;
 
+	_assign_ton_in_nodes();
+
 	struct tun_bit_key_nodes tbkn;
-	struct avl_node *itsn = NULL;
 
-	while ((tbkn.tsn = tsna ? tsna : avl_iterate_item(&tun_search_tree, &itsn))) {
+	struct avl_node *itnn = NULL;
+	while ((tbkn.tnn = tnna ? tnna : avl_iterate_item(&tun_net_tree, &itnn))) {
 
-		struct avl_node *itnn = NULL;
-		GLOBAL_ID_T *tsn_gid = &tbkn.tsn->global_id;
-		struct net_key *tsn_netKey = &tbkn.tsn->net;
-		uint8_t isv4 = (tsn_netKey->af == AF_INET);
+		struct avl_node *itsn = NULL;
+		while ((tbkn.tsn = tsna ? tsna : avl_iterate_item(&tun_search_tree, &itsn))) {
 
-		dbgf_track(DBGT_INFO, "%s=%s: %s=%s %s=%s %s=%d %s=%s", ARG_TUN_OUT, tbkn.tsn->nameKey,
-			ARG_TUN_OUT_PKID, cryptShaAsString(&tbkn.tsn->global_id), ARG_TUN_OUT_GWNAME, tbkn.tsn->gwName,
-			ARG_TUN_OUT_TYPE, tbkn.tsn->srcType, ARG_TUN_OUT_NET, netAsStr(tsn_netKey));
+			dbgf_track(DBGT_INFO, "%s=%s: %s=%s %s=%s %s=%s",
+				ARG_TUN_OUT, tbkn.tsn->nameKey,
+				ARG_TUN_OUT_PKID, cryptShaAsString(&tbkn.tsn->gwId),
+				ARG_TUN_OUT_GWNAME, tbkn.tsn->gwName,
+				ARG_TUN_OUT_NET, netAsStr(&tbkn.tsn->net));
 
-		while ((tbkn.tnn = tnna ? tnna : avl_iterate_item(&tun_net_tree, &itnn))) {
+			struct tun_dev_in *tin;
+			struct tun_bit_node *tbn = avl_find_item(&(tbkn.tnn->tun_bit_tree), &tbkn);
+			assertion(-501371, (tbn == avl_find_item(&(tbkn.tsn->tun_bit_tree), &tbkn)));
 
-			//                        assertion(-501370, (!avl_find(&tun_bit_tree, )));
-			assertion(-501371, (!avl_find(&(tbkn.tsn->tun_bit_tree), &tbkn)));
-			assertion(-501372, (!avl_find(&(tbkn.tnn->tun_bit_tree), &tbkn)));
+			if (tbn) {
+				dbgf_track(DBGT_INFO, "Already added");
 
-			struct orig_node *on = tbkn.tnn->tunNetKey.ton->tunOutKey.on;
-			GLOBAL_ID_T *tnn_gid = &on->k.nodeId;
-			struct net_key *tnn_netKey = &tbkn.tnn->tunNetKey.netKey;
-			struct net_key ingressPrefix = tbkn.tnn->tunNetKey.ton->ingressPrefix[isv4];
-
-			dbgf_track(DBGT_INFO, "checking network=%s bw_fmu8=%d, ingress=%s localIp=%s tun6Id=%d from nodeId=%s hostname=%s",
-				netAsStr(tnn_netKey), tbkn.tnn->bandwidth.val.u8, netAsStr(&ingressPrefix),
-				ip6AsStr(&tbkn.tnn->tunNetKey.ton->localIp), tbkn.tnn->tunNetKey.ton->tunOutKey.tun6Id,
-				cryptShaAsString(&on->k.nodeId), on->k.hostname);
-
-			if (!(
-				(tbkn.tsn->routeSearchProto == TYP_TUN_PROTO_ALL || tbkn.tsn->routeSearchProto == tbkn.tnn->tunNetKey.bmx7RouteType) &&
-				tsn_netKey->af == tnn_netKey->af &&
-				(tbkn.tsn->netPrefixMax == TYP_TUN_OUT_PREFIX_NET ?
-				tsn_netKey->mask >= tnn_netKey->mask : tbkn.tsn->netPrefixMax >= tnn_netKey->mask) &&
-				(tbkn.tsn->netPrefixMin == TYP_TUN_OUT_PREFIX_NET ?
-				tsn_netKey->mask <= tnn_netKey->mask : tbkn.tsn->netPrefixMin <= tnn_netKey->mask) &&
-				is_ip_net_equal(&tsn_netKey->ip, &tnn_netKey->ip, XMIN(tsn_netKey->mask, tnn_netKey->mask), tnn_netKey->af) &&
-				IMPLIES(strlen(tbkn.tsn->gwName), !strcmp(tbkn.tsn->gwName, on->k.hostname)) &&
-				IMPLIES(!is_zero(tsn_gid, sizeof(GLOBAL_ID_T)), cryptShasEqual(tsn_gid, tnn_gid))
-				)) {
-
+			} else if (!match_tsn_requirements(tbkn.tsn, tbkn.tnn)) {
 				dbgf_track(DBGT_INFO, "failed A");
 
-			} else if (!(tbkn.tsn->srcType == TUN_SRC_TYPE_UNDEF || tbkn.tsn->srcType == TUN_SRC_TYPE_STATIC)) {
-
-				dbgf_track(DBGT_INFO, "failed B");
-
-			} else if (tbkn.tsn->srcRtNet.mask && ingressPrefix.mask && !(
-				tbkn.tsn->srcRtNet.mask >= ingressPrefix.mask &&
-				is_ip_net_equal(&tbkn.tsn->srcRtNet.ip, &ingressPrefix.ip, ingressPrefix.mask, ingressPrefix.af))) {
-
-				dbgf_track(DBGT_INFO, "failed C");
-
-			} else if (!find_matching_tun_in_node(isv4, tbkn.tsn, tbkn.tnn->tunNetKey.ton)) {
-
+			} else if (!(tin = _find_matching_tun_in_node(tbkn.tsn, tbkn.tnn->tunNetKey.ton))) {
 				dbgf_track(DBGT_INFO, "failed D");
 
 			} else {
 
-				struct tun_bit_node *tbn = debugMalloc(sizeof( struct tun_bit_node), -300455);
+				tbn = debugMalloc(sizeof( struct tun_bit_node), -300455);
 				memset(tbn, 0, sizeof(struct tun_bit_node));
 
 				tbn->tunBitKey.beInvTunBitMetric = hton64(UMETRIC_MAX);
 				tbn->tunBitKey.beIpRule = htonl(tbkn.tsn->iprule);
 				tbn->tunBitKey.beIpMetric = htonl(tbkn.tsn->ipmetric);
 				tbn->tunBitKey.keyNodes = tbkn;
-				tbn->tunBitKey.invRouteKey = tsn_netKey->mask > tnn_netKey->mask ? *tsn_netKey : *tnn_netKey;
+				tbn->tunBitKey.invRouteKey = tbkn.tsn->net.mask > tbkn.tnn->tunNetKey.netKey.mask ? tbkn.tsn->net : tbkn.tnn->tunNetKey.netKey;
 				tbn->tunBitKey.invRouteKey.mask = 128 - tbn->tunBitKey.invRouteKey.mask;
 
 				tbn->ipTable = tbkn.tsn->iptable;
@@ -970,40 +1047,109 @@ void _add_tun_bit_node(struct tun_search_node *tsna, struct tun_net_node *tnna)
 				avl_insert(&tbkn.tnn->tun_bit_tree, tbn, -300458);
 			}
 
-			if (tnna)
+			if (tsna)
 				break;
 		}
 
-		if (tsna)
+		if (tnna)
 			break;
 	}
 }
 
 STATIC_FUNC
-void _del_tun_bit_node(struct tun_search_node *tsn, struct tun_net_node *tnn)
+void _del_tun_bit_node(struct tun_search_node *tsn_only, struct tun_net_offer *tnn_only)
 {
 	TRACE_FUNCTION_CALL;
-
 	struct tun_bit_node *tbn;
-	struct avl_tree *tbt = (tsn ? &tsn->tun_bit_tree : (tnn ? &tnn->tun_bit_tree : &tun_bit_tree));
+	struct avl_tree *tbt = (tsn_only ? &tsn_only->tun_bit_tree : (tnn_only ? &tnn_only->tun_bit_tree : &tun_bit_tree));
 
 	while ((tbn = avl_first_item(tbt))) {
 
+		struct tun_search_node *tsn = tbn->tunBitKey.keyNodes.tsn;
+		struct tun_net_offer *tnn = tbn->tunBitKey.keyNodes.tnn;
+		assertion(-500000, (tsn->net.af == tnn->tunNetKey.netKey.af));
+		IDM_T isv4 = (tnn->tunNetKey.netKey.af == AF_INET);
+		uint8_t af = (isv4 ? AF_INET : AF_INET6);
+		struct tun_dev_offer *ton = tnn->tunNetKey.ton;
+		struct tun_dev_in *tin = ton->tin;
+		assertion(-500000, (tin));
 
-		avl_remove(&(tbn->tunBitKey.keyNodes.tsn->tun_bit_tree), &tbn->tunBitKey.keyNodes, -300460);
-		avl_remove(&(tbn->tunBitKey.keyNodes.tnn->tun_bit_tree), &tbn->tunBitKey.keyNodes, -300461);
+		avl_remove(&(tsn->tun_bit_tree), &tbn->tunBitKey.keyNodes, -300460);
+		avl_remove(&(tnn->tun_bit_tree), &tbn->tunBitKey.keyNodes, -300461);
 		avl_remove(&tun_bit_tree, &tbn->tunBitKey, -300462);
-
 		configure_tun_bit(DEL, tbn, TDN_STATE_CURRENT);
-
 		debugFree(tbn, -300463);
+
+		if (!strcmp(tin->tunSearchNameKey, tsn->nameKey)) {
+
+			struct tun_dev_offer *tinTon;
+			while ((tinTon = avl_remove_first_item(&tin->tun_dev_offer_tree, -300000))) {
+
+				tinTon->tin = NULL;
+
+				struct tun_net_offer *tinTonTnn;
+				struct avl_node *an = NULL;
+				while ((tinTonTnn = avl_iterate_item(&tinTon->tun_net_tree, &an))) {
+
+					assertion(-500000, (tinTonTnn->tunNetKey.netKey.af == af));
+					if (tinTonTnn->tunNetKey.netKey.af != af)
+						continue;
+
+					struct tun_bit_node *tinTonTnnTbn;
+					while ((tinTonTnnTbn = avl_first_item(&tinTonTnn->tun_bit_tree))) {
+
+						assertion(-500000, (tinTonTnnTbn->tunBitKey.keyNodes.tnn->tunNetKey.ton == tinTon));
+
+						avl_remove(&(tinTonTnnTbn->tunBitKey.keyNodes.tsn->tun_bit_tree), &tinTonTnnTbn->tunBitKey.keyNodes, -300000);
+						avl_remove(&(tinTonTnnTbn->tunBitKey.keyNodes.tnn->tun_bit_tree), &tinTonTnnTbn->tunBitKey.keyNodes, -300000);
+						avl_remove(&tun_bit_tree, &tinTonTnnTbn->tunBitKey, -300000);
+						configure_tun_bit(DEL, tinTonTnnTbn, TDN_STATE_CURRENT);
+						debugFree(tinTonTnnTbn, -300000);
+					}
+				}
+			}
+		}
+
+		dbgf_track(DBGT_INFO, "tsn=%s tsnNet=%s tsnTbnItems=%d", tsn->nameKey, netAsStr(&tsn->net), tsn->tun_bit_tree.items);
+		dbgf_track(DBGT_INFO, "tnn=%s tnnTbnItems=%d", netAsStr(&tnn->tunNetKey.netKey), tnn->tun_bit_tree.items);
+		dbgf_track(DBGT_INFO, "tonOn=%s tonId=%d tonTnnItems=%d", ton->tunOutKey.on->k.hostname, ton->tunOutKey.tun6Id, ton->tun_net_tree.items);
+		dbgf_track(DBGT_INFO, "tin=%p", tin);
+		dbgf_track(DBGT_INFO, "tin=%s", tin->nameKey.str);
+		dbgf_track(DBGT_INFO, "tinMode=%d", tin->localPrefixMode);
+		dbgf_track(DBGT_INFO, "tinSearch=%s",tin->tunSearchNameKey);
+		dbgf_track(DBGT_INFO, "tinTonItems=%d/%d",!!avl_find(&tin->tun_dev_offer_tree, &ton->tunOutKey),tin->tun_dev_offer_tree.items);
+
+		if (!tnn->tun_bit_tree.items) {
+			struct tun_net_offer *tonTnn;
+			struct avl_node *an = NULL;
+			while ((tonTnn = avl_iterate_item(&ton->tun_net_tree, &an))) {
+				assertion(-500000, (tonTnn->tunNetKey.netKey.af == af));
+				if (tonTnn->tun_bit_tree.items)
+					break;
+			}
+
+			if (!tonTnn && avl_find(&tin->tun_dev_offer_tree, &ton->tunOutKey)) {
+				avl_remove(&tin->tun_dev_offer_tree, &ton->tunOutKey, -300000);
+				ton->tin = NULL;
+			}
+
+			if (!tin->tun_dev_offer_tree.items && tin->localPrefixMode == TYP_TUN_DEV_MODE_AUTO) {
+				assertion(-500000, (tin->tunAddr.mask));
+				kernel_set_addr(DEL, tin->upIfIdx, tin->tunAddr.af, &tin->tunAddr.ip, (isv4 ? 32 : 128), NO /*deprecated*/);
+				tin->tunAddr = ZERO_NET_KEY;
+				my_description_changed = YES;
+			}
+		}
 	}
 }
 
 STATIC_FUNC
-void upd_tun_bit_node(uint8_t del, struct tun_search_node *tsn, struct tun_net_node *tnn)
+void upd_tun_bit_node(uint8_t del, struct tun_search_node *tsn, struct tun_net_offer *tnn)
 {
-	assertion(-501378, (!(tsn && tnn)));
+	dbgf_track(DBGT_INFO, "%s tsn=%s tnn=%s ton=%s", del ? "DEL" : "ADD", tsn ? tsn->nameKey : DBG_NIL,
+		tnn ? netAsStr(&tnn->tunNetKey.netKey) : DBG_NIL, tnn ? tnn->tunNetKey.ton->tunOutKey.on->k.hostname : DBG_NIL);
+
+	assertion(-501378, ((!!tsn + !!tnn) <= 1));
 	if (del)
 		_del_tun_bit_node(tsn, tnn);
 	else
@@ -1026,7 +1172,7 @@ IDM_T _recalc_tun_bit_tree(void)
 
 		struct tun_bit_key tbk_new = tbn_curr->tunBitKey;
 		struct tun_bit_node *tbn_next = avl_next_item(&tun_bit_tree, &tbn_curr->tunBitKey);
-		struct tun_net_node *tnn = tbn_curr->tunBitKey.keyNodes.tnn;
+		struct tun_net_offer *tnn = tbn_curr->tunBitKey.keyNodes.tnn;
 		struct tun_search_node *tsn = tbn_curr->tunBitKey.keyNodes.tsn;
 
 		struct orig_node *on = tnn->tunNetKey.ton->tunOutKey.on;
@@ -1074,6 +1220,8 @@ void eval_tun_bit_tree(void *onlyIfOrderChanged)
 	TRACE_FUNCTION_CALL;
 
 	task_remove((void(*)(void*))eval_tun_bit_tree, ((void*) 1));
+	if (task_remove((void(*)(void*))eval_tun_bit_tree, ((void*) 0)) == SUCCESS)
+		onlyIfOrderChanged = NULL;
 
 	if (tun_search_tree.items)
 		task_register(5000, (void(*)(void*))eval_tun_bit_tree, ((void*) 1), -300466);
@@ -1106,7 +1254,7 @@ void eval_tun_bit_tree(void *onlyIfOrderChanged)
 
 			assertion(-501564, (currBKey.keyNodes.tnn));
 			assertion(-501565, (currBKey.keyNodes.tnn->tunNetKey.ton));
-			assertion(-501574, (assert_tbn_ton_tdn(isv4, currBKey.keyNodes.tnn->tunNetKey.ton, tbn_curr)));
+//			assertion(-501574, (assert_tbn_ton_tdn(isv4, currBKey.keyNodes.tnn->tunNetKey.ton, tbn_curr)));
 			//TODO: This one would casually cause bmx7 to crash. But later 501577 seems NOT !!?
 			//assertion(-501575, IMPLIES(tbn_curr,
 			//	tbn_curr->active_tdn==tbn_curr->tunBitKey.keyNodes.tnn->tunNetKey.ton->tdnCatchAll[isv4] ||
@@ -1209,10 +1357,10 @@ void eval_tun_bit_tree(void *onlyIfOrderChanged)
 				configure_tun_bit(ADD, tbn_curr, TDN_STATE_CURRENT);
 			}
 
-			assertion(-501576, (assert_tbn_ton_tdn(isv4, currBKey.keyNodes.tnn->tunNetKey.ton, tbn_curr)));
+//			assertion(-501576, (assert_tbn_ton_tdn(isv4, currBKey.keyNodes.tnn->tunNetKey.ton, tbn_curr)));
 			assertion(-501577, IMPLIES(tbn_curr,
-				tbn_curr->active_tdn == tbn_curr->tunBitKey.keyNodes.tnn->tunNetKey.ton->tdnCatchAll[isv4] ||
-				tbn_curr->active_tdn == tbn_curr->tunBitKey.keyNodes.tnn->tunNetKey.ton->tdnDedicated[isv4]));
+				tbn_curr->active_tdn == tbn_curr->tunBitKey.keyNodes.tnn->tunNetKey.ton->tdnCatchAll ||
+				tbn_curr->active_tdn == tbn_curr->tunBitKey.keyNodes.tnn->tunNetKey.ton->tdnDedicated));
 
 		}
 	}
@@ -1220,24 +1368,38 @@ void eval_tun_bit_tree(void *onlyIfOrderChanged)
 }
 
 STATIC_FUNC
+IDM_T get_free_tun6Id(void) {
+	uint8_t tun6Id = 0;
+
+	for (tun6Id = 0; tun6Id < MAX_AUTO_TUNID_OCT; tun6Id++) {
+		struct avl_node *an;
+		struct tun_dev_in *tin;
+		for (an = NULL; ((tin = avl_iterate_item(&tun_in_tree, &an)) && tin->tun6Id != tun6Id););
+
+		if (!tin)
+			return tun6Id;
+	}
+	return -1;
+}
+
+
+
+
+STATIC_FUNC
 int create_dsc_tlv_tun6(struct tx_frame_iterator *it)
 {
 	TRACE_FUNCTION_CALL;
-	uint16_t m = 0;
-	struct tun_in_node *tin;
-	struct avl_node *an = NULL;
 	struct dsc_msg_tun6 *adv = (struct dsc_msg_tun6 *) tx_iterator_cache_msg_ptr(it);
+	int16_t m, tun6IdMax = get_max_tun6Id();
+	struct tun_dev_in *tin;
 
 	assertion(-502041, is_ip_set(&my_primary_ip));
+	for (m = 0; (m <= tun6IdMax && tx_iterator_cache_data_space_pref(it, ((m + 1) * sizeof(struct dsc_msg_tun6)), 0)); m++) {
 
-	while ((tin = avl_iterate_item(&tun_in_tree, &an)) && tx_iterator_cache_data_space_pref(it, ((m + 1) * sizeof(struct dsc_msg_tun6)), 0)) {
-
-		if (tin->upIfIdx && tin->tun6Id >= 0) {
-			assertion(-501541, (tin->upIfIdx && tin->tun6Id >= 0));
-			assertion(-501384, (tin->tun6Id == m));
-			adv[m].localIp = tin->remote;
-			m++;
-		}
+		if ((tin = get_tun6Id_node(m)) && tin->upIfIdx && is_ip_set(&tin->localRemoteIp6))
+			adv[m].localIp = tin->localRemoteIp6;
+		else
+			adv[m].localIp = my_primary_ip;
 	}
 
 	if (m)
@@ -1247,172 +1409,154 @@ int create_dsc_tlv_tun6(struct tx_frame_iterator *it)
 }
 
 STATIC_FUNC
-struct tun_out_key set_tun_adv_key(struct orig_node *on, int16_t tun6Id)
+struct tun_dev_offer_key set_tun_adv_key(struct orig_node *on, int16_t tun6Id)
 {
-	struct tun_out_key key;
+	struct tun_dev_offer_key key;
 	memset(&key, 0, sizeof(key));
 	key.on = on;
 	key.tun6Id = tun6Id;
 	return key;
 }
 
+
 STATIC_FUNC
-IDM_T terminate_tun_out(struct orig_node *on, struct tun_out_node *tona, struct tun_net_node *tnna)
+void del_tun_net_node(struct tun_net_offer *tnn)
 {
-	TRACE_FUNCTION_CALL;
-	IDM_T used = NO;
+	struct tun_dev_offer *ton = tnn->tunNetKey.ton;
+	struct tun_net_offer *tnn1 = avl_remove(&tun_net_tree, &tnn->tunNetKey, -300421);
+	struct tun_net_offer *tnn2 = avl_remove(&ton->tun_net_tree, &tnn->tunNetKey, -300423);
+#ifndef NO_ASSERTIONS
+	assertion_dbg(-501251, (tnn == tnn1 && tnn == tnn2),
+		"should remove %s %s but removed %s %s and %s %s !",
+		netAsStr(&tnn->tunNetKey.netKey),
+		cryptShaAsString(&tnn->tunNetKey.ton->tunOutKey.on->k.nodeId),
+		tnn1 ? netAsStr(&tnn1->tunNetKey.netKey) : "---",
+		tnn1 ? cryptShaAsString(&tnn1->tunNetKey.ton->tunOutKey.on->k.nodeId) : "---",
+		tnn2 ? netAsStr(&tnn2->tunNetKey.netKey) : "---",
+		tnn2 ? cryptShaAsString(&tnn2->tunNetKey.ton->tunOutKey.on->k.nodeId) : "---");
+#endif
 
-	struct tun_out_node *ton;
-	struct tun_out_key key = set_tun_adv_key(on, 0);
-
-	for (key.tun6Id = 0; (ton = (tona ? tona : avl_find_item(&tun_out_tree, &key))); key.tun6Id++) {
-
-		struct tun_out_node *rtun;
-		struct tun_net_node *tnn, *tnn1, *tnn2;
-
-
-		assertion(-501247, (ton));
-
-		dbgf_all(DBGT_INFO, "should remove tunnel_node localIp=%s tun6Id=%d nodeId=%s key=%s (tunnel_out.items=%d, tun->net.items=%d)",
-			ip6AsStr(&ton->localIp), ton->tunOutKey.tun6Id, cryptShaAsString(&ton->tunOutKey.on->k.nodeId),
-			memAsHexString(&ton->tunOutKey, sizeof(key)), tun_out_tree.items, ton->tun_net_tree.items);
-
-		used |= (ton->tdnDedicated[0] || ton->tdnDedicated[1] || ton->tdnCatchAll[0] || ton->tdnCatchAll[1]);
-
-		while ((tnn = (tnna ? tnna : avl_first_item(&ton->tun_net_tree)))) {
-
-			upd_tun_bit_node(DEL, NULL, tnn);
-			//unlink_tun_net(tnn, NULL, NULL);
-
-			tnn1 = avl_remove(&tun_net_tree, &tnn->tunNetKey, -300421);
-			tnn2 = avl_remove(&ton->tun_net_tree, &tnn->tunNetKey, -300423);
-
-			assertion_dbg(-501251, (tnn == tnn1 && tnn == tnn2),
-				"should remove %s %s but removed %s %s and %s %s !",
-				netAsStr(&tnn->tunNetKey.netKey),
-				cryptShaAsString(&tnn->tunNetKey.ton->tunOutKey.on->k.nodeId),
-				tnn1 ? netAsStr(&tnn1->tunNetKey.netKey) : "---",
-				tnn1 ? cryptShaAsString(&tnn1->tunNetKey.ton->tunOutKey.on->k.nodeId) : "---",
-				tnn2 ? netAsStr(&tnn2->tunNetKey.netKey) : "---",
-				tnn2 ? cryptShaAsString(&tnn2->tunNetKey.ton->tunOutKey.on->k.nodeId) : "---");
-
-
-			debugFree(tnn, -300424);
-
-			if (tnna)
-				break;
-		}
-
-		if (!tnna) {
-			assertion(-501385, (!ton->tun_net_tree.items));
-
-			rtun = avl_remove(&tun_out_tree, &key, -300410);
-			assertion(-501253, (rtun == ton));
-			debugFree(ton, -300425);
-		}
-
-		CHECK_INTEGRITY();
-
-		if (tona)
-			break;
-	}
-
-	return used;
+	debugFree(tnn, -300424);
+	CHECK_INTEGRITY();
 }
 
 
-static uint8_t new_tun6_advs_changed;
+STATIC_FUNC
+void reset_tun_out(struct tun_dev_offer *ton)
+{
+	TRACE_FUNCTION_CALL;
+//	IDM_T used = 0;
+
+	dbgf_all(DBGT_INFO, "should remove tunnel_node remoteTunIp=%s tun6Id=%d nodeId=%s key=%s (tunnel_out.items=%d, tun->net.items=%d)",
+		ip6AsStr(&ton->remoteTunIp), ton->tunOutKey.tun6Id, cryptShaAsString(&ton->tunOutKey.on->k.nodeId),
+		memAsHexString(&ton->tunOutKey, sizeof(struct tun_dev_offer_key)), tun_out_tree.items, ton->tun_net_tree.items);
+
+	struct tun_net_offer *tnn;
+
+	for (tnn = NULL; ((tnn = avl_next_item(&ton->tun_net_tree, tnn ? &tnn->tunNetKey : NULL)));) {
+//			struct tun_bit_node *tbn = NULL;
+//			while ((tbn = avl_next_item(&tnn->tun_bit_tree, tbn ? &tbn->tunBitKey : NULL)) && !tbn->active_tdn);
+//			used |= (tbn && tbn->active_tdn);
+			upd_tun_bit_node(DEL, NULL, tnn);
+			del_tun_net_node(tnn);
+			tun6_nets_resetted = YES;
+	}
+}
+
+
+STATIC_FUNC
+void terminate_tun_out(struct orig_node *on, struct tun_dev_offer *only_ton)
+{
+	TRACE_FUNCTION_CALL;
+	IDM_T used = 0;
+	struct tun_dev_offer_key key = set_tun_adv_key(on, 0);
+	struct tun_dev_offer *ton;
+
+	while ((ton = (only_ton ? only_ton : avl_closest_item(&tun_out_tree, &key))) && ton->tunOutKey.on == on) {
+		key = ton->tunOutKey;
+
+
+		dbgf_all(DBGT_INFO, "should remove tunnel_node remodeTunIp=%s tun6Id=%d nodeId=%s key=%s (tunnel_out.items=%d, tun->net.items=%d)",
+			ip6AsStr(&ton->remoteTunIp), ton->tunOutKey.tun6Id, cryptShaAsString(&ton->tunOutKey.on->k.nodeId),
+			memAsHexString(&ton->tunOutKey, sizeof(key)), tun_out_tree.items, ton->tun_net_tree.items);
+
+		struct tun_net_offer *tnn;
+		while ((tnn = avl_first_item(&ton->tun_net_tree))) {
+			used |= !!(ton->tdnDedicated);
+			upd_tun_bit_node(DEL, NULL, tnn);
+			del_tun_net_node(tnn);
+		}
+
+		assertion(-501385, (!ton->tun_net_tree.items));
+		struct tun_dev_offer *rtun = avl_remove(&tun_out_tree, &key, -300410);
+		assertion(-501253, (rtun == ton));
+		debugFree(rtun, -300425);
+		CHECK_INTEGRITY();
+
+		if (only_ton)
+			break;
+		else
+			key.tun6Id++;
+	}
+
+	if (used) {
+		task_remove((void(*)(void*))eval_tun_bit_tree, ((void*) 0));
+		task_register(0, (void(*)(void*))eval_tun_bit_tree, ((void*) 0), -300000);
+	}
+}
+
+
 
 STATIC_FUNC
 int process_dsc_tlv_tun6(struct rx_frame_iterator *it)
 {
 	TRACE_FUNCTION_CALL;
-	int16_t m;
+	int32_t m;
 
 	if (it->dcOp->kn == myKey)
 		return it->f_msgs_len;
 
+	if (it->op == TLV_OP_DEL || (it->op == TLV_OP_NEW && !is_ip_set(&it->on->primary_ip))) {
 
-	if (it->op == TLV_OP_DEL) {
-
-		if (terminate_tun_out(it->on, NULL, NULL))
-			eval_tun_bit_tree(NULL);
+		tun6_advs_added = NO;
+		tun6_nets_resetted = NO;
+		terminate_tun_out(it->on, NULL);
 
 		return it->f_msgs_len;
 
 	} else if (it->op == TLV_OP_NEW) {
 
-		new_tun6_advs_changed = (it->on ? NO : YES);
+		tun6_advs_added = NO;
+		tun6_nets_resetted = NO;
+		assertion(-500000, (is_ip_set(&it->on->primary_ip)));
 
-		if (!new_tun6_advs_changed) {
-			if (!is_ip_set(&it->on->primary_ip))
-				new_tun6_advs_changed = YES;
-		}
-
-		if (!new_tun6_advs_changed) {
-			struct tun_out_key key = set_tun_adv_key(it->on, 0);
-			struct tun_out_node *tun;
-
-			for (key.tun6Id = 0; (tun = avl_find_item(&tun_out_tree, &key)); key.tun6Id++) {
-
-				if (!is_ip_equal(&tun->remoteIp, &it->on->primary_ip)) {
-					new_tun6_advs_changed = YES;
-					break;
-				}
-			}
-
-			if (key.tun6Id != it->f_msgs_len / it->f_handl->min_msg_size)
-				new_tun6_advs_changed = YES;
-		}
-
-
-		if (!new_tun6_advs_changed) {
-			uint8_t t;
-			uint8_t tlv_types[] = {BMX_DSC_TLV_TUN6
-				, BMX_DSC_TLV_TUN4IN6_INGRESS, BMX_DSC_TLV_TUN6IN6_INGRESS
-				, BMX_DSC_TLV_TUN4IN6_SRC, BMX_DSC_TLV_TUN6IN6_SRC
-				//                      ,BMX_DSC_TLV_TUN4IN6_NET_ADV, BMX_DSC_TLV_TUN6IN6_NET_ADV
-			};
-
-			for (t = 0; t < sizeof(tlv_types); t++) {
-
-				if (desc_frame_changed(it->dcOld, it->dcOp, tlv_types[t])) {
-					new_tun6_advs_changed = YES;
-					break;
-				}
-			}
-		}
-
-
-		if (!new_tun6_advs_changed)
+		if (!desc_frame_changed(it->dcOld, it->dcOp, it->f_type))
 			return it->f_msgs_len;
 
-		if (terminate_tun_out(it->on, NULL, NULL))
-			eval_tun_bit_tree(NULL);
 
-		if (!is_ip_set(&it->on->primary_ip))
-			return it->f_msgs_len;
+	} else if (it->op != TLV_OP_TEST) {
+
+		return it->f_msgs_len;
 	}
 
+	assertion(-500000, (it->op == TLV_OP_TEST || it->op == TLV_OP_NEW));
 
-	for (m = 0; m < it->f_msgs_fixed; m++) {
+	if (it->op == TLV_OP_TEST) {
+		for (m = 0; m < it->f_msgs_fixed; m++) {
+			struct dsc_msg_tun6 *adv = &(((struct dsc_msg_tun6 *) (it->f_data))[m]);
+			struct tun_dev_offer_key key = set_tun_adv_key(it->on, m);
 
-		struct dsc_msg_tun6 *adv = &(((struct dsc_msg_tun6 *) (it->f_data))[m]);
-		struct tun_out_key key = set_tun_adv_key(it->on, m);
-
-		dbgf_track(DBGT_INFO, "op=%s tunnel_out.items=%d tun_net.items=%d msg=%d/%d localIp=%s nodeId=%s key=%s",
-			tlv_op_str(it->op), tun_out_tree.items, tun_net_tree.items, m, it->f_msgs_fixed,
-			ip6AsStr(&adv->localIp), nodeIdAsStringFromDescAdv(it->dcOp->desc_frame),
-			memAsHexString(&key, sizeof(key)));
-
-		if (it->op == TLV_OP_TEST) {
+			dbgf_track(DBGT_INFO, "op=%s tunnel_out.items=%d tun_net.items=%d msg=%d/%d localIp=%s nodeId=%s key=%s",
+				tlv_op_str(it->op), tun_out_tree.items, tun_net_tree.items, m, it->f_msgs_fixed,
+				ip6AsStr(&adv->localIp), nodeIdAsStringFromDescAdv(it->dcOp->desc_frame),
+				memAsHexString(&key, sizeof(key)));
 
 			struct hna_node *un = NULL;
-			struct tun_in_node *tin = NULL;
+			struct tun_dev_in *tin = NULL;
 
 			if (!is_ip_valid(&adv->localIp, AF_INET6) ||
 				is_ip_net_equal(&adv->localIp, &IP6_LINKLOCAL_UC_PREF, IP6_LINKLOCAL_UC_PLEN, AF_INET6) ||
-				(tin = avl_find_item_by_field(&tun_in_tree, &adv->localIp, tun_in_node, remote)) ||
+				(tin = avl_find_item_by_field(&tun_in_tree, &adv->localIp, tun_dev_in, localRemoteIp6)) ||
 				(un = find_overlapping_hna(&adv->localIp, 128, it->on))) {
 				dbgf_sys(DBGT_ERR, "nodeId=%s %s=%s blocked (by my %s=%s or other's %s with nodeId=%s)",
 					nodeIdAsStringFromDescAdv(it->dcOp->desc_frame),
@@ -1422,22 +1566,37 @@ int process_dsc_tlv_tun6(struct rx_frame_iterator *it)
 
 				return TLV_RX_DATA_BLOCKED;
 			}
-
-		} else if (it->op == TLV_OP_NEW) {
-
-			assertion(-500005, (!avl_find_item(&tun_out_tree, &key)));
-
-			struct tun_out_node *tun = debugMallocReset(sizeof(struct tun_out_node), -300426);
-			tun->tunOutKey = key;
-			tun->localIp = adv->localIp;
-			tun->remoteIp = it->on->primary_ip;
-			tun->ingressPrefix[1] = ZERO_NET4_KEY;
-			tun->ingressPrefix[0] = ZERO_NET6_KEY;
-			AVL_INIT_TREE(tun->tun_net_tree, struct tun_net_node, tunNetKey);
-			avl_insert(&tun_out_tree, tun, -300427);
 		}
-	}
 
+	} else if (it->op == TLV_OP_NEW) {
+		struct tun_dev_offer_key key;
+		struct tun_dev_offer *ton;
+
+		for (m = 0; m < it->f_msgs_fixed; m++) {
+			struct dsc_msg_tun6 *adv = &(((struct dsc_msg_tun6 *) (it->f_data))[m]);
+			key = set_tun_adv_key(it->on, m);
+			if ((ton = avl_find_item(&tun_out_tree, &key)) && !is_ip_equal(&ton->remoteTunIp, &adv->localIp)) {
+				reset_tun_out(ton);
+				ton->remoteTunIp = adv->localIp;
+			}
+			if (!ton) {
+				assertion(-500005, (!avl_find_item(&tun_out_tree, &key)));
+				struct tun_dev_offer *ton = debugMallocReset(sizeof(struct tun_dev_offer), -300426);
+				ton->tunOutKey = key;
+				ton->remoteTunIp = adv->localIp;
+				ton->ingressPrefix = ZERO_NET_KEY;
+				ton->remotePrefix = ZERO_NET_KEY;
+				AVL_INIT_TREE(ton->tun_net_tree, struct tun_net_offer, tunNetKey);
+				avl_insert(&tun_out_tree, ton, -300427);
+				reset_tun_out(ton);
+				tun6_advs_added = YES;
+			}
+		}
+
+		key = set_tun_adv_key(it->on, it->f_msgs_fixed - 1);
+		while ((ton = avl_next_item(&tun_out_tree, &key)) && ton->tunOutKey.on == it->on)
+			terminate_tun_out(it->on, ton);
+	}
 
 	return it->f_msgs_len;
 }
@@ -1446,16 +1605,17 @@ STATIC_FUNC
 int create_dsc_tlv_tunXin6ingress(struct tx_frame_iterator *it)
 {
 	TRACE_FUNCTION_CALL;
-	struct tun_in_node *tin;
+	struct tun_dev_in *tin;
 	struct avl_node *an = NULL;
-	uint8_t isSrc4in6 = (it->frame_type == BMX_DSC_TLV_TUN4IN6_INGRESS);
+	uint8_t isv4 = (it->frame_type == BMX_DSC_TLV_TUN4IN6_INGRESS);
+	uint8_t af = (isv4 ? AF_INET : AF_INET6);
 	int32_t pos = 0;
-	uint16_t msg_size = isSrc4in6 ? sizeof(struct dsc_msg_tun4in6ingress) : sizeof(struct dsc_msg_tun6in6ingress);
+	uint16_t msg_size = isv4 ? sizeof(struct dsc_msg_tun4in6ingress) : sizeof(struct dsc_msg_tun6in6ingress);
 
 
 	while ((tin = avl_iterate_item(&tun_in_tree, &an))) {
 
-		if (tin->upIfIdx && tin->tun6Id >= 0 && tin->ingressPrefix46[isSrc4in6].mask) {
+		if (tin->upIfIdx && tin->ingressPrefix.af == af && tin->ingressPrefix.mask && tin->ingressPrefix.mask <= (isv4 ? 32 : 128)) {
 
 			if (pos + msg_size > tx_iterator_cache_data_space_pref(it, 0, 0)) {
 				memset(tx_iterator_cache_msg_ptr(it), 0, pos);
@@ -1466,12 +1626,12 @@ int create_dsc_tlv_tunXin6ingress(struct tx_frame_iterator *it)
 				(struct dsc_msg_tun6in6ingress *) (tx_iterator_cache_msg_ptr(it) + pos);
 
 			adv->tun6Id = tin->tun6Id;
-			adv->ingressPrefixLen = tin->ingressPrefix46[isSrc4in6].mask;
+			adv->ingressPrefixLen = tin->ingressPrefix.mask;
 
-			if (isSrc4in6)
-				*((IP4_T*) & adv->ingressPrefix) = ipXto4(tin->ingressPrefix46[1].ip);
+			if (isv4)
+				*((IP4_T*) & adv->ingressPrefix) = ipXto4(tin->ingressPrefix.ip);
 			else
-				adv->ingressPrefix = tin->ingressPrefix46[0].ip;
+				adv->ingressPrefix = tin->ingressPrefix.ip;
 
 			pos += msg_size;
 		}
@@ -1483,41 +1643,62 @@ STATIC_FUNC
 int process_dsc_tlv_tunXin6ingress(struct rx_frame_iterator *it)
 {
 	TRACE_FUNCTION_CALL;
-	uint8_t isSrc4 = (it->f_type == BMX_DSC_TLV_TUN4IN6_INGRESS);
-	int32_t pos;
+	uint8_t isv4 = (it->f_type == BMX_DSC_TLV_TUN4IN6_INGRESS);
+	uint8_t af = (isv4 ? AF_INET : AF_INET6);
+	int32_t m;
+	struct tun_dev_offer_key key;
+	struct tun_dev_offer *ton;
 
 	if (it->dcOp->kn == myKey)
 		return it->f_msgs_len;
 
+	if (it->op == TLV_OP_NEW && !desc_frame_changed(it->dcOld, it->dcOp, it->f_type) && !tun6_advs_added)
+		return it->f_msgs_len;
+
+	if (it->op == TLV_OP_DEL) {
+		for (key = set_tun_adv_key(it->on, 0); ((ton = avl_closest_item(&tun_out_tree, &key)) && ton->tunOutKey.on == it->on); key.tun6Id = (ton->tunOutKey.tun6Id + 1)) {
+			if (IMPLIES(ton->ingressPrefix.af, ton->ingressPrefix.af == af))
+				reset_tun_out(ton);
+			ton->ingressPrefix = ZERO_NET_KEY;
+		}
+	}
+
+	if (it->op == TLV_OP_TEST) {
+
+		for (m = 0; m < it->f_msgs_fixed; m++) {
+			struct dsc_msg_tun6in6ingress *adv = (((struct dsc_msg_tun6in6ingress *) &(it->f_data[m*it->f_handl->min_msg_size])));
+			IPX_T prefix = isv4 ? ip4ToX(*((IP4_T*) & adv->ingressPrefix)) : adv->ingressPrefix;
+			if (ip_netmask_validate(&prefix, adv->ingressPrefixLen, af, NO) == FAILURE)
+				return TLV_RX_DATA_FAILURE;
+		}
+	}
 
 	if (it->op == TLV_OP_NEW) {
 
-		//if (!tun6_cache_tlv_sha_if_changed(it))
-		if (!new_tun6_advs_changed)
-			return it->f_msgs_len;
+		for (key = set_tun_adv_key(it->on, 0); ((ton = avl_closest_item(&tun_out_tree, &key)) && ton->tunOutKey.on == it->on); key.tun6Id = (ton->tunOutKey.tun6Id + 1)) {
+			ton->updated = NO;
+		}
 
-	}
+		for (m = 0; m < it->f_msgs_fixed; m++) {
+			struct dsc_msg_tun6in6ingress *adv = (((struct dsc_msg_tun6in6ingress *) &(it->f_data[m*it->f_handl->min_msg_size])));
+			IPX_T prefix = isv4 ? ip4ToX(*((IP4_T*) & adv->ingressPrefix)) : adv->ingressPrefix;
+			struct net_key net = *setNet(NULL, af, adv->ingressPrefixLen, &prefix);
 
-	if (it->op == TLV_OP_TEST || it->op == TLV_OP_NEW) {
-		for (pos = 0; pos < it->f_msgs_len; pos += it->f_handl->min_msg_size) {
+			key = set_tun_adv_key(it->on, adv->tun6Id);
+			
+			if ((ton = avl_find_item(&tun_out_tree, &key))) {
+				if (memcmp(&ton->ingressPrefix, &net, sizeof(net))) {
+					reset_tun_out(ton);
+					ton->ingressPrefix = net;
+				}
+				ton->updated = YES;
+			}
+		}
 
-			struct dsc_msg_tun6in6ingress *adv =
-				(struct dsc_msg_tun6in6ingress *) (it->f_data + pos);
-			struct tun_out_key key = set_tun_adv_key(it->on, adv->tun6Id);
-			struct tun_out_node *tun = avl_find_item(&tun_out_tree, &key);
-			IPX_T prefix = isSrc4 ? ip4ToX(*((IP4_T*) & adv->ingressPrefix)) : adv->ingressPrefix;
-
-			if (it->op == TLV_OP_TEST) {
-
-				assertion(-501265, (!tun || (tun->tunOutKey.on == it->on)));
-
-				if (ip_netmask_validate(&prefix, adv->ingressPrefixLen, (isSrc4 ? AF_INET : AF_INET6), NO) == FAILURE)
-					return TLV_RX_DATA_FAILURE;
-
-			} else if (it->op == TLV_OP_NEW) {
-
-				if (tun)
-					setNet(&tun->ingressPrefix[isSrc4], (isSrc4 ? AF_INET : AF_INET6), adv->ingressPrefixLen, &prefix);
+		for (key = set_tun_adv_key(it->on, 0); ((ton = avl_closest_item(&tun_out_tree, &key)) && ton->tunOutKey.on == it->on); key.tun6Id = (ton->tunOutKey.tun6Id + 1)) {
+			if (!ton->updated && ton->ingressPrefix.af == af) {
+				reset_tun_out(ton);
+				ton->ingressPrefix = ZERO_NET_KEY;
 			}
 		}
 	}
@@ -1525,48 +1706,124 @@ int process_dsc_tlv_tunXin6ingress(struct rx_frame_iterator *it)
 }
 
 STATIC_FUNC
-int create_dsc_tlv_tunXin6src(struct tx_frame_iterator *it)
+int create_dsc_tlv_tunXin6remote(struct tx_frame_iterator *it)
 {
 	TRACE_FUNCTION_CALL;
-	return TLV_TX_DATA_IGNORED;
+	struct tun_dev_in *tin;
+	struct avl_node *an = NULL;
+	uint8_t isv4 = (it->frame_type == BMX_DSC_TLV_TUN4IN6_SRC);
+	uint8_t af = (it->frame_type == BMX_DSC_TLV_TUN4IN6_SRC) ? AF_INET : AF_INET6;
+	int32_t pos = 0;
+	uint16_t msg_size = isv4 ? sizeof(struct dsc_msg_tun4in6remote) : sizeof(struct dsc_msg_tun6in6remote);
+
+
+	while ((tin = avl_iterate_item(&tun_in_tree, &an))) {
+
+		if (tin->upIfIdx && tin->remotePrefix.af == af && tin->remotePrefix.mask && tin->remotePrefix.mask <= (isv4 ? 32 : 128)) {
+
+			if (pos + msg_size > tx_iterator_cache_data_space_pref(it, 0, 0)) {
+				memset(tx_iterator_cache_msg_ptr(it), 0, pos);
+				return TLV_TX_DATA_FULL;
+			}
+
+			struct dsc_msg_tun6in6remote *adv =
+				(struct dsc_msg_tun6in6remote *) (tx_iterator_cache_msg_ptr(it) + pos);
+
+			adv->tun6Id = tin->tun6Id;
+			adv->mode.srcType = tin->remotePrefixMode;
+			adv->mode.reserved = 0;
+			adv->mode.exhausted = 0;
+			adv->srcPrefixLen = tin->remotePrefix.mask;
+			adv->srcPrefixMin = XMAX(tin->remotePrefixMin, tin->remotePrefix.mask);
+
+			if (isv4)
+				*((IP4_T*) & adv->srcPrefix) = ipXto4(tin->remotePrefix.ip);
+			else
+				adv->srcPrefix= tin->remotePrefix.ip;
+
+			pos += msg_size;
+		}
+	}
+	return pos;
 }
 
 STATIC_FUNC
-int process_dsc_tlv_tunXin6src(struct rx_frame_iterator *it)
+int process_dsc_tlv_tunXin6remote(struct rx_frame_iterator *it)
 {
 	TRACE_FUNCTION_CALL;
+	uint8_t isv4 = (it->f_type == BMX_DSC_TLV_TUN4IN6_SRC);
+	uint8_t af = (isv4 ? AF_INET : AF_INET6);
+	int32_t m;
+	struct tun_dev_offer_key key;
+	struct tun_dev_offer *ton;
+
+	if (it->dcOp->kn == myKey)
+		return it->f_msgs_len;
+
+	if (it->op == TLV_OP_NEW && !desc_frame_changed(it->dcOld, it->dcOp, it->f_type) && !tun6_advs_added)
+		return it->f_msgs_len;
+
+	if (it->op == TLV_OP_DEL) {
+		for (key = set_tun_adv_key(it->on, 0); ((ton = avl_closest_item(&tun_out_tree, &key)) && ton->tunOutKey.on == it->on); key.tun6Id = (ton->tunOutKey.tun6Id + 1)) {
+			if (ton->remotePrefix.af)
+				reset_tun_out(ton);
+			ton->remotePrefix = ZERO_NET_KEY;
+			ton->remotePrefixMin = 0;
+			ton->remoteMode = 0;
+		}
+	}
+
+	if (it->op == TLV_OP_TEST) {
+		for (m = 0; m < it->f_msgs_fixed; m++) {
+			struct dsc_msg_tun6in6remote *adv = (((struct dsc_msg_tun6in6remote *) &(it->f_data[m*it->f_handl->min_msg_size])));
+			IPX_T prefix = isv4 ? ip4ToX(*((IP4_T*) & adv->srcPrefix)) : adv->srcPrefix;
+			if (
+				!adv->srcPrefixLen ||
+				ip_netmask_validate(&prefix, adv->srcPrefixLen, af, NO) == FAILURE ||
+				adv->srcPrefixMin > (isv4 ? 32 : 128) ||
+				adv->srcPrefixMin < adv->srcPrefixLen ||
+				adv->mode.srcType > MAX_TUN_DEV_MODE) {
+
+				return TLV_RX_DATA_FAILURE;
+			}
+		}
+	}
+
+	if (it->op == TLV_OP_NEW) {
+		for (key = set_tun_adv_key(it->on, 0); ((ton = avl_closest_item(&tun_out_tree, &key)) && ton->tunOutKey.on == it->on); key.tun6Id = (ton->tunOutKey.tun6Id + 1)) {
+			ton->updated = NO;
+		}
+		for (m = 0; m < it->f_msgs_fixed; m++) {
+			struct dsc_msg_tun6in6remote *adv = (((struct dsc_msg_tun6in6remote *) &(it->f_data[m*it->f_handl->min_msg_size])));
+			IPX_T prefix = isv4 ? ip4ToX(*((IP4_T*) & adv->srcPrefix)) : adv->srcPrefix;
+			struct net_key net = *setNet(NULL, af, adv->srcPrefixLen, &prefix);
+
+			key = set_tun_adv_key(it->on, adv->tun6Id);
+
+			if ((ton = avl_find_item(&tun_out_tree, &key))) {
+				if (memcmp(&ton->remotePrefix, &net, sizeof(net)) ||
+					ton->remotePrefixMin != adv->srcPrefixMin ||
+					ton->remoteMode != adv->mode.srcType )
+				{
+					reset_tun_out(ton);
+					ton->remotePrefix = net;
+					ton->remotePrefixMin = adv->srcPrefixMin;
+					ton->remoteMode = adv->mode.srcType;
+				}
+
+				ton->updated = YES;
+			}
+		}
+		for (key = set_tun_adv_key(it->on, 0); ((ton = avl_closest_item(&tun_out_tree, &key)) && ton->tunOutKey.on == it->on); key.tun6Id = (ton->tunOutKey.tun6Id + 1)) {
+			if (!ton->updated && ton->remotePrefix.af == af) {
+				reset_tun_out(ton);
+				ton->remotePrefix = ZERO_NET_KEY;
+			}
+		}
+	}
 	return it->f_msgs_len;
 }
 
-STATIC_FUNC
-struct tun_in_node * set_tun6Id(char *tun_name, struct dsc_msg_tun6in6net *adv)
-{
-	struct tun_in_node * tun = NULL;
-
-	if (tun_name) {
-		IFNAME_T nameKey = {.str =
-			{0}};
-		strcpy(nameKey.str, tun_name);
-
-		if (tun_in_tree.items)
-			tun = avl_find_item(&tun_in_tree, nameKey.str);
-	} else {
-		if (tun_in_tree.items)
-			tun = avl_first_item(&tun_in_tree);
-	}
-
-	if (tun && tun->upIfIdx) {
-		assertion(-501386, (tun->tun6Id >= 0));
-		assertion(-501387, (!strncmp(tun->nameKey.str, tun_name_prefix.str, strlen(tun_name_prefix.str))));
-		adv->tun6Id = tun->tun6Id;
-	} else {
-		dbgf_all(DBGT_WARN, "NO matching %s=%s found for %s=%s/%d ! Skiping announcement",
-			ARG_TUN_DEV, tun_name, ARG_TUN_IN, ip6AsStr(&adv->network), adv->networkLen);
-		return NULL;
-	}
-
-	return tun;
-}
 
 STATIC_FUNC
 uint32_t create_description_tlv_tunXin6_net_adv_msg(struct tx_frame_iterator *it, struct dsc_msg_tun6in6net *adv, uint32_t m, char *tun_name)
@@ -1574,22 +1831,23 @@ uint32_t create_description_tlv_tunXin6_net_adv_msg(struct tx_frame_iterator *it
 	TRACE_FUNCTION_CALL;
 
 	IDM_T is4in6 = (it->frame_type == BMX_DSC_TLV_TUN4IN6_NET) ? YES : NO;
-	struct tun_in_node *tun = set_tun6Id(tun_name, adv);
-
+	IFNAME_T nameKey = {.str = {0}};
+	strcpy(nameKey.str, tun_name ? tun_name : "");
+	struct tun_dev_in *tun = tun_name ? avl_find_item(&tun_in_tree, nameKey.str) : avl_first_item(&tun_in_tree);
 
 	dbgf_all(DBGT_INFO, "name=%s src=%s dst=%s/%d",
-		tun_name, tun ? ip6AsStr(&tun->remote) : "MISSING!", ip6AsStr(&adv->network), adv->networkLen);
+		tun_name, tun ? ip6AsStr(&tun->localRemoteIp6) : "MISSING!", ip6AsStr(&adv->network), adv->networkLen);
 
 	assertion(-501442, (adv->bandwidth.val.u8));
 	assertion(-501443, ip_netmask_validate(&adv->network, adv->networkLen, (is4in6 ? AF_INET : AF_INET6), NO /*force*/) == SUCCESS);
 
-	if (tun && tx_iterator_cache_data_space_pref(it, ((m + 1) * it->handl->min_msg_size), 100)) {
+	if (tun && tun->upIfIdx && tx_iterator_cache_data_space_pref(it, ((m + 1) * it->handl->min_msg_size), 100)) {
+
+		assertion(-501387, (!strncmp(tun->nameKey.str, tun_name_prefix.str, strlen(tun_name_prefix.str))));
+		adv->tun6Id = tun->tun6Id;
 
 		if (is4in6) {
-			struct dsc_msg_tun4in6net *msg4 =
-				&(((struct dsc_msg_tun4in6net *) tx_iterator_cache_msg_ptr(it))[m]);
-
-
+			struct dsc_msg_tun4in6net *msg4 = &(((struct dsc_msg_tun4in6net *) tx_iterator_cache_msg_ptr(it))[m]);
 			msg4->network = ipXto4(adv->network);
 			msg4->networkLen = adv->networkLen;
 			msg4->bandwidth = adv->bandwidth;
@@ -1602,9 +1860,9 @@ uint32_t create_description_tlv_tunXin6_net_adv_msg(struct tx_frame_iterator *it
 
 		m++;
 
-	} else if (tun) {
+	} else if (tun && tun->upIfIdx) {
 		dbgf_mute(30, DBGL_SYS, DBGT_ERR, "NO description space left for src=%s dst=%s",
-			ip6AsStr(&tun->remote), ip6AsStr(&adv->network));
+			ip6AsStr(&tun->localRemoteIp6), ip6AsStr(&adv->network));
 	}
 
 	return m;
@@ -1614,20 +1872,20 @@ STATIC_FUNC
 int create_dsc_tlv_tunXin6net(struct tx_frame_iterator *it)
 {
 	TRACE_FUNCTION_CALL;
-	IDM_T is4in6 = (it->frame_type == BMX_DSC_TLV_TUN4IN6_NET) ? YES : NO;
-	uint8_t af = is4in6 ? AF_INET : AF_INET6;
+	IDM_T isv4 = (it->frame_type == BMX_DSC_TLV_TUN4IN6_NET) ? YES : NO;
+	uint8_t af = isv4 ? AF_INET : AF_INET6;
 	uint32_t m = 0, should = 0;
 	UMETRIC_T umax = UMETRIC_FM8_MAX;
 
-	struct tun_in_node *tin;
+	struct tun_dev_in *tin;
 	struct avl_node *an = NULL;
 	while ((tin = avl_iterate_item(&tun_in_tree, &an))) {
 
-		if (tin->tun6Id >= 0 && tin->upIfIdx && tin->tunAddr46[is4in6].mask) {
+		if (tin->upIfIdx && tin->tunAddr.mask && tin->tunAddr.af == af) {
 
 			struct dsc_msg_tun6in6net adv = {
-				.network = tin->tunAddr46[is4in6].ip,
-				.networkLen = tin->tunAddr46[is4in6].mask,
+				.network = tin->tunAddr.ip,
+				.networkLen = tin->tunAddr.mask,
 				.proto_type = tin->advProto,
 				.bandwidth = umetric_to_fmu8(&umax)
 			};
@@ -1640,7 +1898,6 @@ int create_dsc_tlv_tunXin6net(struct tx_frame_iterator *it)
 			dbgf_track(DBGT_INFO, "%s=%s dst=%s/%d type=%d tun6Id=%d bw=%d",
 				ARG_TUN_DEV, tin->nameKey.str, ipXAsStr(af, &adv.network), adv.networkLen,
 				adv.proto_type, adv.tun6Id, adv.bandwidth.val.u8);
-
 		}
 	}
 
@@ -1703,157 +1960,139 @@ int create_dsc_tlv_tunXin6net(struct tx_frame_iterator *it)
 	}
 
 	dbgf((should != m ? DBGL_SYS : DBGL_CHANGES), (should != m ? DBGT_WARN : DBGT_INFO), "created %d of %d %s advs %s",
-		m, should, (is4in6 ? "v4" : "v6"), (should != m ? "due to lack of description space!!" : ""));
+		m, should, (isv4 ? "v4" : "v6"), (should != m ? "due to lack of description space!!" : ""));
 
-	return m * (is4in6 ? sizeof(struct dsc_msg_tun4in6net) : sizeof(struct dsc_msg_tun6in6net));
+	return m * (isv4 ? sizeof(struct dsc_msg_tun4in6net) : sizeof(struct dsc_msg_tun6in6net));
 }
 
 STATIC_FUNC
 int process_dsc_tlv_tunXin6net(struct rx_frame_iterator *it)
 {
 	TRACE_FUNCTION_CALL;
-	uint8_t family = it->f_type == BMX_DSC_TLV_TUN4IN6_NET ? AF_INET : AF_INET6;
-	uint16_t msg_size = it->f_handl->min_msg_size;
-	int32_t pos = 0, cnt = 0;
-	static uint32_t tlv_new_counter = 0;
-
+	uint8_t family = (it->f_type == BMX_DSC_TLV_TUN4IN6_NET ? AF_INET : AF_INET6);
+	int32_t m = 0;
 	uint8_t used = NO;
+
+	dbgf_track(DBGT_INFO, "op=%d ft=%d on=%s tot.items=%d",
+		it->op, it->f_type, (it->on ? it->on->k.hostname : NULL), tun_out_tree.items);
 
 	if (it->dcOp->kn == myKey && it->op != TLV_OP_TEST)
 		return it->f_msgs_len;
 
+	if (it->op == TLV_OP_NEW && !desc_frame_changed(it->dcOld, it->dcOp, it->f_type) && !tun6_advs_added && !tun6_nets_resetted)
+		return it->f_msgs_len;
 
-	tlv_new_counter = (tlv_new_counter + 1) ? (tlv_new_counter + 1) : (tlv_new_counter + 2);
+	if (it->op == TLV_OP_TEST) {
+
+		for (m = 0; m < it->f_msgs_fixed; m++) {
+			struct dsc_msg_tun6in6net *adv = (((struct dsc_msg_tun6in6net *) &(it->f_data[m*it->f_handl->min_msg_size])));
+			IPX_T ipx = (family == AF_INET) ? ip4ToX(*((IP4_T*) & adv->network)) : adv->network;
+
+			if (ip_netmask_validate(&ipx, adv->networkLen, family, NO) == FAILURE) {
+				dbgf_sys(DBGT_ERR, "net=%s/%d", ipXAsStr(family, &ipx), adv->networkLen);
+				return TLV_RX_DATA_FAILURE;
+			}
+			dbgf_track(DBGT_INFO, "accepted msg %d/%d: net=%s/%d", m, it->f_msgs_fixed, ipXAsStr(family, &ipx), adv->networkLen);
+		}
+	}
 
 	if (it->op == TLV_OP_NEW) {
 
-		if (!new_tun6_advs_changed && !desc_frame_changed(it->dcOld, it->dcOp, it->f_type))
-			return it->f_msgs_len;
-	}
-
-	if (it->op == TLV_OP_TEST || it->op == TLV_OP_NEW) {
-
-
-		for (pos = 0; pos < it->f_msgs_len; pos += msg_size) {
-
-			struct dsc_msg_tun6in6net *adv = (((struct dsc_msg_tun6in6net *) (it->f_data + pos)));
-			struct net_key net;
+		for (m = 0; m < it->f_msgs_fixed; m++) {
+			struct dsc_msg_tun6in6net *adv = (((struct dsc_msg_tun6in6net *) &(it->f_data[m*it->f_handl->min_msg_size])));
 			IPX_T ipx = (family == AF_INET) ? ip4ToX(*((IP4_T*) & adv->network)) : adv->network;
-			setNet(&net, family, adv->networkLen, &ipx);
+			struct tun_dev_offer_key tok = set_tun_adv_key(it->on, adv->tun6Id);
+			struct tun_dev_offer *ton = avl_find_item(&tun_out_tree, &tok);
+			char *what = "No tun_out or zero bw for";
 
-			if (ip_netmask_validate(&net.ip, net.mask, net.af, NO) == FAILURE) {
-				dbgf_sys(DBGT_ERR, "network=%s", netAsStr(&net));
-				return TLV_RX_DATA_FAILURE;
-			}
+			if (ton && adv->bandwidth.val.u8) {
+				struct tun_net_offer_key tnk = ZERO_TUN_NET_KEY;
+				tnk.ton = ton;
+				setNet(&tnk.netKey, family, adv->networkLen, &ipx);
+				tnk.bmx7RouteType = adv->proto_type;
 
-			if (adv->bandwidth.val.u8 == 0)
-				continue;
+				struct tun_net_offer *tnn = avl_find_item(&tun_net_tree, &tnk);
 
-			if (it->op == TLV_OP_NEW) {
+				if (!tnn) {
+					tnn = debugMallocReset(sizeof(struct tun_net_offer), -300418);
+					tnn->tunNetKey = tnk;
+					tnn->bandwidth = adv->bandwidth;
+					AVL_INIT_TREE(tnn->tun_bit_tree, struct tun_bit_node, tunBitKey.keyNodes);
+					avl_insert(&tun_net_tree, tnn, -300419);
+					avl_insert(&ton->tun_net_tree, tnn, -300419);
+					upd_tun_bit_node(ADD, NULL, tnn);
+					used = YES;
+					what = "NEW";
 
-				struct tun_out_key tok = set_tun_adv_key(it->on, adv->tun6Id);
-				struct tun_out_node *ton = avl_find_item(&tun_out_tree, &tok);
-
-				if (ton) {
-
-					struct tun_net_key tnk = ZERO_TUN_NET_KEY;
-					tnk.ton = ton;
-					tnk.netKey = net;
-					tnk.bmx7RouteType = adv->proto_type;
-
-					struct tun_net_node *tnn = avl_find_item(&tun_net_tree, &tnk);
-					char *what = NULL;
-
-					if (!tnn) {
-
-						tnn = debugMallocReset(sizeof(struct tun_net_node), -300418);
-						tnn->tunNetKey = tnk;
-						tnn->bandwidth = adv->bandwidth;
-
-						AVL_INIT_TREE(tnn->tun_bit_tree, struct tun_bit_node, tunBitKey.keyNodes);
-
-						avl_insert(&tun_net_tree, tnn, -300419);
-						avl_insert(&ton->tun_net_tree, tnn, -300419);
-
-						upd_tun_bit_node(ADD, NULL, tnn);
-						used = YES;
-						what = "NEW";
-
-					} else if (tnn->bandwidth.val.u8 != adv->bandwidth.val.u8) {
-
-						upd_tun_bit_node(DEL, NULL, tnn);
-						tnn->bandwidth = adv->bandwidth;
-						upd_tun_bit_node(ADD, NULL, tnn);
-						used = YES;
-						what = "CHANGED";
-
-					} else {
-
-						what = "OLD";
-					}
-
-					dbgf_track(DBGT_INFO, "%s network=%s bw=%d, found for orig=%s tun6Id=%d",
-						what, netAsStr(&net), adv->bandwidth.val.u8, cryptShaAsString(&tok.on->k.nodeId), tok.tun6Id);
-
-					assertion(-501578, (tnn->tunNetKey.ton->tunOutKey.on == tok.on));
-
-					tnn->tlv_new_counter = tlv_new_counter;
-					cnt++;
+				} else if (tnn->bandwidth.val.u8 != adv->bandwidth.val.u8) {
+					upd_tun_bit_node(DEL, NULL, tnn);
+					tnn->bandwidth = adv->bandwidth;
+					upd_tun_bit_node(ADD, NULL, tnn);
+					used = YES;
+					what = "CHANGED";
 
 				} else {
-					dbgf_sys(DBGT_WARN, "no matching tunnel_node found for nodeId=%s tun6Id=%d",
-						cryptShaAsString(&tok.on->k.nodeId), tok.tun6Id);
+					what = "OLD";
 				}
+
+				assertion(-501578, (tnn->tunNetKey.ton->tunOutKey.on == tok.on));
+				tnn->updated = YES;
 			}
+			dbgf_track(ton ? DBGT_INFO : DBGT_WARN, "%s net=%s/%d bw=%d orig=%s tun6Id=%d",
+				what, ipXAsStr(family, &ipx), adv->networkLen, adv->bandwidth.val.u8, cryptShaAsString(&tok.on->k.nodeId), tok.tun6Id);
 		}
-		dbgf_track(DBGT_INFO, "accepted %d/%d %s msgs", cnt, (pos / msg_size), (family == AF_INET ? "v4" : "v6"));
 	}
 
 	if (it->op == TLV_OP_NEW || it->op == TLV_OP_DEL) {
 
 		// Purge tun6Xin6_net advertisements that were not updated:
-		struct tun_out_key tok = set_tun_adv_key(it->on, 0);
-		struct tun_out_node *ton;
+		struct tun_dev_offer_key tok;
+		struct tun_dev_offer *ton;
+		for (tok = set_tun_adv_key(it->on, 0); ((ton = avl_find_item(&tun_out_tree, &tok))); tok.tun6Id++) {
 
-		while ((ton = avl_find_item(&tun_out_tree, &tok))) {
+			dbgf_track(DBGT_INFO, "tok.tun6id=%d tot.items=%d", tok.tun6Id, tun_out_tree.items);
 
-			struct tun_net_node *tnn;
-			struct avl_node *an = NULL;
+			struct tun_net_offer *tnn;
+			struct tun_net_offer_key tnk = ZERO_TUN_NET_KEY;
+			while ((tnn = avl_next_item(&ton->tun_net_tree, &tnk))) {
+				tnk = tnn->tunNetKey;
 
-			while ((tnn = avl_iterate_item(&ton->tun_net_tree, &an))) {
+				dbgf_track(DBGT_INFO, "tok.tun6id=%d tot.items=%d tnn=%s",
+					tok.tun6Id, tun_out_tree.items, netAsStr(&tnn->tunNetKey.netKey));
 
 				if (tnn->tunNetKey.netKey.af != family)
 					continue;
 
-				if (tnn->tlv_new_counter != tlv_new_counter)
-					break;
+				if (tnn->updated) {
+					tnn->updated = NO;
+				} else {
+					assertion(-501390, (tnn->tunNetKey.netKey.af == family));
+					struct tun_bit_node *tbn = NULL;
+					int i = 0;
+					while ((tbn = avl_next_item(&tnn->tun_bit_tree, tbn ? &tbn->tunBitKey.keyNodes : NULL)) && !tbn->active_tdn) {
+						dbgf_track(DBGT_INFO, "tok.tun6id=%d tot.items=%d tnn=%s tbt.items=%d tbn=%p tbnKey=%s",
+							tok.tun6Id, tun_out_tree.items, netAsStr(&tnn->tunNetKey.netKey), tnn->tun_bit_tree.items, tbn,
+							memAsHexString(&tbn->tunBitKey.keyNodes, sizeof(struct tun_bit_key_nodes)));
+						assertion(-500000, ((++i) < 100));
+					}
+					used |= (tbn && tbn->active_tdn);
+					upd_tun_bit_node(DEL, NULL, tnn);
+					del_tun_net_node(tnn);
+				}
 			}
-
-			if (tnn) {
-				assertion(-501389, (tnn->tlv_new_counter != tlv_new_counter));
-				assertion(-501390, (tnn->tunNetKey.netKey.af == family));
-				used |= terminate_tun_out(it->on, ton, tnn);
-				continue;
-			}
-
-			tok.tun6Id++;
 		}
-
 
 		if (used)
 			eval_tun_bit_tree(NULL);
-		//set_tun_net(NULL);
 	}
-
-
 
 	return it->f_msgs_len;
 }
 
 struct tun_out_status {
 	char* tunOut;
-	GLOBAL_ID_T *id;
-	GLOBAL_ID_T *longId;
+	GLOBAL_ID_T *gwId;
+	GLOBAL_ID_T *longGwId;
 	char *gwName;
 	int16_t proto;
 	char src[IPX_PREFIX_STR_LEN];
@@ -1868,17 +2107,24 @@ struct tun_out_status {
 	uint32_t pref;
 	uint32_t table;
 	uint32_t ipMtc;
-	char *tunIn;
+	char *tunDev;
+	char *tunDevDev;
+	char *tunDevOut;
+	char srcSearch[IPX_PREFIX_STR_LEN+4];
+	int16_t lM;
+	char srcAddr[IPX_PREFIX_STR_LEN];
 	char *tunName;
 	int16_t setProto;
 	char tunRoute[IPX_PREFIX_STR_LEN];
 	GLOBAL_ID_T *remoteId;
 	GLOBAL_ID_T *remoteLongId;
 	char* remoteName;
-	uint32_t tunId;
+	uint32_t i;
 	int16_t advProto;
 	char advNet[IPX_PREFIX_STR_LEN];
-	char srcIngress[IPX_PREFIX_STR_LEN];
+	char ingress[IPX_PREFIX_STR_LEN];
+	char srcOffer[IPX_PREFIX_STR_LEN+4];
+	int16_t dM;
 	UMETRIC_T advBwVal;
 	UMETRIC_T *advBw;
 	UMETRIC_T *pathMtc;
@@ -1888,13 +2134,15 @@ struct tun_out_status {
 	IPX_T *remoteTunIp;
 };
 
+#define FIELD_RELEVANCE_TUNPROT FIELD_RELEVANCE_LOW
+
 static const struct field_format tun_out_status_format[] = {
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunOut,      1, FIELD_RELEVANCE_HIGH),
-        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_SHORT_ID,  tun_out_status, id,          1, FIELD_RELEVANCE_HIGH),
-        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_GLOBAL_ID, tun_out_status, longId,      1, FIELD_RELEVANCE_MEDI),
-        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, gwName,      1, FIELD_RELEVANCE_HIGH),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_SHORT_ID,  tun_out_status, gwId,        1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_GLOBAL_ID, tun_out_status, longGwId,    1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, gwName,      1, FIELD_RELEVANCE_LOW),
         FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, src,         1, FIELD_RELEVANCE_MEDI),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, proto,       1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, proto,       1, FIELD_RELEVANCE_TUNPROT),
         FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, net,         1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, min,         1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, max,         1, FIELD_RELEVANCE_HIGH),
@@ -1903,27 +2151,34 @@ static const struct field_format tun_out_status_format[] = {
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, hyst,        1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, rating,      1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_UMETRIC,   tun_out_status, minBw,       1, FIELD_RELEVANCE_HIGH),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, pref,        1, FIELD_RELEVANCE_MEDI),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, table,       1, FIELD_RELEVANCE_MEDI),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, ipMtc,       1, FIELD_RELEVANCE_MEDI),
-        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunIn,       1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, pref,        1, FIELD_RELEVANCE_TUNPROT),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, table,       1, FIELD_RELEVANCE_TUNPROT),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, ipMtc,       1, FIELD_RELEVANCE_TUNPROT),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunDev,      1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunDevDev,   1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunDevOut,   1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, srcSearch,   1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, lM,          1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, srcAddr,     1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, tunName,     1, FIELD_RELEVANCE_HIGH),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, setProto,    1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, setProto,    1, FIELD_RELEVANCE_TUNPROT),
         FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, tunRoute,    1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_SHORT_ID,  tun_out_status, remoteId,    1, FIELD_RELEVANCE_HIGH),
-        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_GLOBAL_ID, tun_out_status, remoteLongId,1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_GLOBAL_ID, tun_out_status, remoteLongId,1, FIELD_RELEVANCE_LOW),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_CHAR,      tun_out_status, remoteName,  1, FIELD_RELEVANCE_HIGH),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, tunId,       1, FIELD_RELEVANCE_LOW),
-        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, advProto,    1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, i,           1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, advProto,    1, FIELD_RELEVANCE_TUNPROT),
         FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, advNet,      1, FIELD_RELEVANCE_HIGH),
-        FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, srcIngress,  1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, ingress,     1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_STRING_CHAR,       tun_out_status, srcOffer,    1, FIELD_RELEVANCE_MEDI),
+        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, dM,          1, FIELD_RELEVANCE_MEDI),
         FIELD_FORMAT_INIT(FIELD_TYPE_UMETRIC,           tun_out_status, advBwVal,    1, FIELD_RELEVANCE_LOW),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_UMETRIC,   tun_out_status, advBw,       1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_UMETRIC,   tun_out_status, pathMtc,     1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_UMETRIC,           tun_out_status, tunMtcVal,   1, FIELD_RELEVANCE_LOW),
         FIELD_FORMAT_INIT(FIELD_TYPE_POINTER_UMETRIC,   tun_out_status, tunMtc,      1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_INIT(FIELD_TYPE_IPX6P,             tun_out_status, localTunIp,  1, FIELD_RELEVANCE_LOW),
-        FIELD_FORMAT_INIT(FIELD_TYPE_IPX6P,             tun_out_status, remoteTunIp, 1, FIELD_RELEVANCE_LOW),
+        FIELD_FORMAT_INIT(FIELD_TYPE_IPX6P,             tun_out_status, remoteTunIp, 1, FIELD_RELEVANCE_MEDI),
 //        FIELD_FORMAT_INIT(FIELD_TYPE_UINT,              tun_out_status, up,            1, FIELD_RELEVANCE_HIGH),
         FIELD_FORMAT_END
 };
@@ -1931,7 +2186,7 @@ static const struct field_format tun_out_status_format[] = {
 static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
 {
 
-	struct tun_net_node *tnn;
+	struct tun_net_offer *tnn;
 	struct tun_search_node *tsn;
 	struct avl_node *an;
 
@@ -1944,8 +2199,8 @@ static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
 		status_size += (tsn->tun_bit_tree.items ? 0 : sizeof(struct tun_out_status));
 
 
-	struct tun_out_status *status = (struct tun_out_status *) (handl->data = debugRealloc(handl->data, status_size, -300428));
-	memset(status, 0, status_size);
+	struct tun_out_status *s = (struct tun_out_status *) (handl->data = debugRealloc(handl->data, status_size, -300428));
+	memset(s, 0, status_size);
 
 	struct avl_tree * t[] = {&tun_search_tree, &tun_bit_tree, &tun_net_tree};
 	uint8_t a;
@@ -1954,7 +2209,7 @@ static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
 		for (an = NULL; (p = avl_iterate_item(t[a], &an));) {
 
 			struct tun_bit_node *tbn = (t[a] == &tun_bit_tree) ? p : NULL;
-			struct tun_net_node *tnn = (t[a] == &tun_net_tree) ? p : (tbn ? tbn->tunBitKey.keyNodes.tnn : NULL);
+			struct tun_net_offer *tnn = (t[a] == &tun_net_tree) ? p : (tbn ? tbn->tunBitKey.keyNodes.tnn : NULL);
 			struct tun_search_node *tsn = (t[a] == &tun_search_tree) ? p : (tbn ? tbn->tunBitKey.keyNodes.tsn : NULL);
 
 			if (!tbn && tsn && tsn->tun_bit_tree.items)
@@ -1962,80 +2217,186 @@ static int32_t tun_out_status_creator(struct status_handl *handl, void *data)
 
 			if (!tbn && tnn && tnn->tun_bit_tree.items)
 				continue;
+			
+			assertion(-500000, (tsn || tnn));
 
 			if (tsn) {
-				status->tunOut = tsn->nameKey;
-				status->id = &tsn->global_id;
-				status->longId = &tsn->global_id;
-				status->gwName = strlen(tsn->gwName) ? tsn->gwName : DBG_NIL;
-				status->proto = tsn->routeSearchProto;
-				status->setProto = tsn->routeSetProto;
-				strcpy(status->net, netAsStr(&(tsn->net)));
-				strcpy(status->src, tsn->srcRtNet.mask ? netAsStr(&(tsn->srcRtNet)) : DBG_NIL);
-				status->min = tsn->netPrefixMin == TYP_TUN_OUT_PREFIX_NET ? tsn->net.mask : tsn->netPrefixMin;
-				status->max = tsn->netPrefixMax == TYP_TUN_OUT_PREFIX_NET ? tsn->net.mask : tsn->netPrefixMax;
-				status->aOLP = tsn->allowLargerPrefixRoutesWithWorseTunMetric;
-				status->bOSP = tsn->breakSmallerPrefixRoutesWithBetterTunMetric;
-				status->hyst = tsn->hysteresis;
-				status->rating = tsn->rating;
-				status->minBw = tsn->minBW ? &tsn->minBW : NULL;
-				status->table = tsn->iptable;
-				status->pref = tsn->iprule;
-				status->ipMtc = tsn->ipmetric;
+				s->tunOut = tsn->nameKey;
+				s->gwId = &tsn->gwId;
+				s->longGwId = &tsn->gwId;
+				s->gwName = strlen(tsn->gwName) ? tsn->gwName : DBG_NIL;
+				s->proto = tsn->routeSearchProto;
+				s->setProto = tsn->routeSetProto;
+				strcpy(s->net, netAsStr(&(tsn->net)));
+				strcpy(s->src, tsn->srcRtNet.mask ? netAsStr(&(tsn->srcRtNet)) : DBG_NIL);
+				s->min = tsn->netPrefixMin == TYP_TUN_OUT_PREFIX_NET ? tsn->net.mask : tsn->netPrefixMin;
+				s->max = tsn->netPrefixMax == TYP_TUN_OUT_PREFIX_NET ? tsn->net.mask : tsn->netPrefixMax;
+				s->aOLP = tsn->allowLargerPrefixRoutesWithWorseTunMetric;
+				s->bOSP = tsn->breakSmallerPrefixRoutesWithBetterTunMetric;
+				s->hyst = tsn->hysteresis;
+				s->rating = tsn->rating;
+				s->minBw = tsn->minBW ? &tsn->minBW : NULL;
+				s->table = tsn->iptable;
+				s->pref = tsn->iprule;
+				s->ipMtc = tsn->ipmetric;
+				s->tunDev = strlen(tsn->tunInNameKey.str) ? tsn->tunInNameKey.str : DBG_NIL;
 			} else {
-				status->tunOut = DBG_NIL;
-				status->gwName = DBG_NIL;
-				status->proto = -1;
-				status->setProto = -1;
-				strcpy(status->net, DBG_NIL);
-				strcpy(status->src, DBG_NIL);
+				s->tunDev = DBG_NIL;
+				s->tunOut = DBG_NIL;
+				s->gwName = DBG_NIL;
+				s->proto = -1;
+				s->setProto = -1;
+				strcpy(s->net, DBG_NIL);
+				strcpy(s->src, DBG_NIL);
 			}
 
 			if (tbn) {
 				struct net_key tunRoute = tbn->tunBitKey.invRouteKey;
 				tunRoute.mask = tbn ? (128 - tunRoute.mask) : 0;
-				strcpy(status->tunRoute, netAsStr(&tunRoute));
+				strcpy(s->tunRoute, netAsStr(&tunRoute));
 
-				status->tunName = (tbn->active_tdn ? tbn->active_tdn->nameKey.str : DBG_NIL);
-				status->tunIn = (tbn->active_tdn ? tbn->active_tdn->tunCatchKey.tin->nameKey.str : DBG_NIL);
-				status->tunMtcVal = UMETRIC_MAX - ntoh64(tbn->tunBitKey.beInvTunBitMetric);
-				status->tunMtc = status->tunMtcVal ? &status->tunMtcVal : NULL;
+				s->tunName = (tbn->active_tdn ? tbn->active_tdn->nameKey.str : DBG_NIL);
+				s->tunMtcVal = UMETRIC_MAX - ntoh64(tbn->tunBitKey.beInvTunBitMetric);
+				s->tunMtc = s->tunMtcVal ? &s->tunMtcVal : NULL;
 
 			} else {
-				strcpy(status->tunRoute, DBG_NIL);
-				status->tunName = DBG_NIL;
-				status->tunIn = DBG_NIL;
+				strcpy(s->tunRoute, DBG_NIL);
+				s->tunName = DBG_NIL;
 			}
+
+			struct tun_dev_in *tin = tnn && tnn->tunNetKey.ton->tin ? tnn->tunNetKey.ton->tin : NULL;
+
+			if (tin) {
+				s->tunDevDev = tin->nameKey.str;
+				s->tunDevOut = strlen(tin->tunSearchNameKey) ? tin->tunSearchNameKey : DBG_NIL;
+				sprintf(s->srcSearch, "%s<=%d",netAsStr(&tin->localPrefix),tin->localPrefixMax);
+				s->lM = tin->localPrefixMode;
+				strcpy(s->srcAddr, netAsStr(&tin->tunAddr));
+			} else {
+				s->tunDevDev = DBG_NIL;
+				s->tunDevOut = DBG_NIL;
+				strcpy(s->srcSearch, DBG_NIL);
+				strcpy(s->srcAddr, DBG_NIL);
+			}
+
+
+
 
 			if (tnn) {
-				struct tun_out_node *tun = tnn->tunNetKey.ton;
+				struct tun_dev_offer *ton = tnn->tunNetKey.ton;
+				assertion(-501391, (ton));
 
-				assertion(-501391, (tun));
-
-				status->remoteName = strlen(tun->tunOutKey.on->k.hostname) ? tun->tunOutKey.on->k.hostname : DBG_NIL;
-				status->remoteId = &tun->tunOutKey.on->k.nodeId;
-				status->localTunIp = &tun->localIp;
-				status->remoteTunIp = &tun->remoteIp;
-				status->tunId = tun->tunOutKey.tun6Id;
-				status->advProto = tnn->tunNetKey.bmx7RouteType;
-				strcpy(status->advNet, netAsStr(&tnn->tunNetKey.netKey));
-				strcpy(status->srcIngress, netAsStr(&tun->ingressPrefix[(tnn->tunNetKey.netKey.af == AF_INET)]));
-				status->advBwVal = fmetric_u8_to_umetric(tnn->bandwidth);
-				status->advBw = status->advBwVal ? &status->advBwVal : NULL;
-				status->pathMtc = tun->tunOutKey.on->neighPath.link ? &tun->tunOutKey.on->neighPath.um : NULL;
+				s->remoteName = strlen(ton->tunOutKey.on->k.hostname) ? ton->tunOutKey.on->k.hostname : DBG_NIL;
+				s->remoteId = &ton->tunOutKey.on->k.nodeId;
+				s->remoteTunIp = &ton->remoteTunIp;
+				s->localTunIp = &ton->tunOutKey.on->primary_ip;
+				s->i = ton->tunOutKey.tun6Id;
+				s->advProto = tnn->tunNetKey.bmx7RouteType;
+				strcpy(s->advNet, netAsStr(&tnn->tunNetKey.netKey));
+				strcpy(s->ingress, ton->ingressPrefix.af ? netAsStr(&ton->ingressPrefix) : DBG_NIL);
+				if (ton->remotePrefix.af)
+					sprintf(s->srcOffer, "%s>=%d",netAsStr(&ton->remotePrefix), ton->remotePrefixMin);
+				else
+					sprintf(s->srcOffer, DBG_NIL);
+				s->dM = ton->remoteMode;
+				s->advBwVal = fmetric_u8_to_umetric(tnn->bandwidth);
+				s->advBw = s->advBwVal ? &s->advBwVal : NULL;
+				s->pathMtc = ton->tunOutKey.on->neighPath.link ? &ton->tunOutKey.on->neighPath.um : NULL;
 			} else {
-				strcpy(status->advNet, DBG_NIL);
-				strcpy(status->srcIngress, DBG_NIL);
+				strcpy(s->advNet, DBG_NIL);
+				strcpy(s->ingress, DBG_NIL);
+				strcpy(s->srcOffer, DBG_NIL);
 			}
 
-			status++;
+			s++;
 		}
 	}
 
-	assertion(-501322, (handl->data + status_size == (uint8_t*) status));
+	assertion(-501322, (handl->data + status_size == (uint8_t*) s));
 
 	return status_size;
 }
+
+
+STATIC_FUNC
+void purge_tunCatchTree(struct tun_dev_in *tin)
+{
+	struct tun_dev_out *tdnUP;
+	struct tun_catch_key tck = {.afKey = (tin ? tin->af : 0), .tin = tin};
+
+	while ((tdnUP = avl_next_item(&tun_catch_tree, &tck))) {
+		tck = tdnUP->tunCatchKey;
+
+		if (tin && tck.tin != tin)
+			return;
+
+		assertion(-501543, (!tdnUP->tun_bit_tree.items));
+		avl_remove(&tun_catch_tree, &tdnUP->tunCatchKey, -300546);
+		kernel_dev_tun_del(tdnUP->nameKey.str, tdnUP->tunCatch_fd);
+		debugFree(tdnUP, -300547);
+
+		if (tin)
+			return;
+	}
+}
+
+STATIC_FUNC
+void configure_tunnel_in(uint8_t del, struct tun_dev_in *tin)
+{
+	TRACE_FUNCTION_CALL;
+	assertion(-501341, IMPLIES(!del, (is_ip_set(&my_primary_ip))));
+	assertion(-501311, IMPLIES(tin->upIfIdx, tin->nameKey.str[0]));
+	assertion(-501342, IMPLIES(tin->upIfIdx, del));
+
+	if (del && tin->upIfIdx) {
+
+		struct tun_dev_offer *ton;
+		while ((ton = avl_first_item(&tin->tun_dev_offer_tree))) {
+			dbgf_track(DBGT_INFO, "Removing ton name=%s tunId=%d", ton->tunOutKey.on->k.hostname, ton->tunOutKey.tun6Id);
+			struct avl_node *an = NULL;
+			struct tun_net_offer *tnn;
+			while ((tnn = avl_iterate_item(&ton->tun_net_tree, &an))) {
+				upd_tun_bit_node(DEL, NULL, tnn);
+			}
+		}
+
+		IDM_T result = kernel_tun_del(tin->nameKey.str);
+		assertion(-501451, (result == SUCCESS));
+		tin->upIfIdx = 0;
+		my_description_changed = YES;
+
+	} else if (!del && !tin->upIfIdx) {
+
+		IPX_T *local = &tin->localRemoteIp6;
+		IPX_T remote = ZERO_IP;
+
+		if (!tin->localRemote_manual) {
+			*local = my_primary_ip;
+			local->s6_addr[DEF_AUTO_TUNID_OCT_POS] += (tin->tun6Id + MIN_AUTO_TUNID_OCT);
+		}
+
+		assertion(-500000, (is_ip_set(local)));
+		assertion(-501312, (strlen(tin->nameKey.str)));
+
+		if ((tin->upIfIdx = kernel_tun_add(tin->nameKey.str, IPPROTO_IP, local, &remote)) > 0) {
+
+//			assertion(-500000, (tin->tunAddr.mask));
+
+			kernel_set_addr(ADD, tin->upIfIdx, AF_INET6, local, 128, YES /*deprecated*/);
+
+			if (tin->tunAddr.mask)
+				kernel_set_addr(ADD, tin->upIfIdx, tin->tunAddr.af, &tin->tunAddr.ip, ((tin->tunAddr.af == AF_INET) ? 32 : 128), NO /*deprecated*/);
+
+			my_description_changed = YES;
+		}
+
+		upd_tun_bit_node(ADD, NULL, NULL);
+	}
+
+	assertion(-500000, (XOR(del, tin->upIfIdx)));
+}
+
+
 
 STATIC_FUNC
 int32_t opt_tun_in(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct opt_parent *patch, struct ctrl_node *cn)
@@ -2178,26 +2539,24 @@ int32_t opt_tun_search(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 					setNet(&tsn->net, net.af, 0, NULL);
 				}
 
-/*
-							} else if (!strcmp(c->opt->name, ARG_TUN_DEV)) {
+			} else if (!strcmp(c->opt->name, ARG_TUN_DEV)) {
 
-								if (c->val && (strlen(c->val) >= NETWORK_NAME_LEN ||
-									validate_name_string(c->val, strlen(c->val) + 1, NULL) != SUCCESS ||
-									strncmp(tun_name_prefix.str, c->val, strlen(tun_name_prefix.str)))) {
+				if (c->val && (strlen(c->val) >= NETWORK_NAME_LEN ||
+					validate_name_string(c->val, strlen(c->val) + 1, NULL) != SUCCESS ||
+					strncmp(tun_name_prefix.str, c->val, strlen(tun_name_prefix.str)))) {
 
-									dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid name: %s (MUST begin with: %s)",
-										c->val, tun_name_prefix.str);
+					dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid name: %s (MUST begin with: %s)",
+						c->val, tun_name_prefix.str);
 
-									return FAILURE;
+					return FAILURE;
 
-								} else if (cmd == OPT_APPLY && tsn) {
+				} else if (cmd == OPT_APPLY && tsn) {
 
-									memset(&tsn->tunName, 0, sizeof(IFNAME_T));
+					memset(&tsn->tunInNameKey, 0, sizeof(IFNAME_T));
 
-									if (c->val)
-										strcpy(tsn->tunName.str, c->val);
-								}
-				 */
+					if (c->val)
+						strcpy(tsn->tunInNameKey.str, c->val);
+				}
 
 			} else if (!strcmp(c->opt->name, ARG_TUN_OUT_SRCRT)) {
 
@@ -2249,10 +2608,10 @@ int32_t opt_tun_search(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 					set_opt_child_val(c, memAsHexString(&pkid, sizeof(pkid)));
 
 					if (cmd == OPT_APPLY && tsn)
-						memcpy(&tsn->global_id, &pkid, sizeof(pkid));
+						memcpy(&tsn->gwId, &pkid, sizeof(pkid));
 
 				} else if (cmd == OPT_APPLY && tsn) {
-					memset(&tsn->global_id, 0, sizeof(pkid));
+					memset(&tsn->gwId, 0, sizeof(pkid));
 				}
 
 			} else if (!strcmp(c->opt->name, ARG_TUN_OUT_MIN_BW)) {
@@ -2347,9 +2706,6 @@ int32_t opt_tun_search(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 				} else if (!strcmp(c->opt->name, ARG_TUN_OUT_IPMETRIC)) {
 					tsn->ipmetric = c->val ? strtol(c->val, NULL, 10) : DEF_TUN_OUT_IPMETRIC;
 
-				} else if (!strcmp(c->opt->name, ARG_TUN_OUT_TYPE)) {
-					tsn->srcType = c->val ? strtol(c->val, NULL, 10) : 0;
-
 				} else if (!strcmp(c->opt->name, ARG_TUN_OUT_HYSTERESIS)) {
 					tsn->hysteresis = c->val ? strtol(c->val, NULL, 10) : DEF_TUN_OUT_HYSTERESIS;
 
@@ -2424,52 +2780,182 @@ int32_t opt_tun_search(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 	return SUCCESS;
 }
 
+
 STATIC_FUNC
-void purge_tunCatchTree(void)
+IDM_T opt_tun_in_dev_args(uint8_t cmd, struct opt_type *opt, struct opt_parent *patch, struct ctrl_node *cn, struct tun_dev_in *tin)
 {
-	struct tun_dev_node *tdnUP;
-	while ((tdnUP = avl_first_item(&tun_catch_tree))) {
-		assertion(-501543, (!tdnUP->tun_bit_tree[0].items && !tdnUP->tun_bit_tree[1].items));
-		avl_remove(&tun_catch_tree, &tdnUP->tunCatchKey, -300546);
-		avl_remove(&tdnUP->tunCatchKey.tin->tun_dev_tree, &tdnUP->nameKey, -300559);
-		kernel_dev_tun_del(tdnUP->nameKey.str, tdnUP->tunCatch_fd);
-		debugFree(tdnUP, -300547);
+
+	struct opt_child *c = NULL;
+	uint8_t af = tin ? tin->af : 0;
+
+	dbgf_cn(cn, DBGL_CHANGES, DBGT_INFO, "tin=%s af=%d cmd=%s %s=%s",
+		tin ? tin->nameKey.str : NULL, af, opt_cmd2str[cmd], opt->name, patch->val);
+
+	while ((c = list_iterate(&patch->childs_instance_list, c))) {
+
+		struct net_key net = {.af = af, .ip = ZERO_IP, .mask = 0};
+
+		dbgf_cn(cn, DBGL_CHANGES, DBGT_INFO, "tin=%s af=%d cmd=%s %s=%s %s=%s",
+			tin ? tin->nameKey.str : NULL, af, opt_cmd2str[cmd], opt->name, patch->val, c->opt->name, c->val);
+
+		if (
+			!strcmp(c->opt->name, ARG_TUN_DEV_ADDR) ||
+			!strcmp(c->opt->name, ARG_TUN_DEV_MODE_LOCALPREFIX) ||
+			!strcmp(c->opt->name, ARG_TUN_DEV_MODE_REMOTEPREFIX) ||
+			!strcmp(c->opt->name, ARG_TUN_DEV_INGRESS)
+			) {
+
+			if (!c->val) {
+
+			} else if (str2netw(c->val, &net.ip, cn, &net.mask, &net.af, !strcmp(c->opt->name, ARG_TUN_DEV_ADDR)) == FAILURE ||
+				((!strcmp(c->opt->name, ARG_TUN_DEV_ADDR) || !strcmp(c->opt->name, ARG_TUN_DEV_MODE_REMOTEPREFIX)) && !is_ip_valid(&net.ip, net.af)) ||
+				(!strcmp(c->opt->name, ARG_TUN_DEV_ADDR) && net.mask < (net.af ? HNA4_PREFIXLEN_MIN : HNA6_PREFIXLEN_MIN))) {
+
+				dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid %s=%s %s or invalid af=%s",
+					c->opt->name, patch->val, c->val, net.af==AF_INET ? "IPv4":"IPv6");
+				return FAILURE;
+
+			} else if (cmd == OPT_ADJUST) {
+
+				set_opt_child_val(c, netAsStr(&net));
+			}
+
+			if (cmd == OPT_APPLY && tin) {
+
+				if (!strcmp(c->opt->name, ARG_TUN_DEV_ADDR))
+					tin->tunAddr = net;
+				
+				if (!strcmp(c->opt->name, ARG_TUN_DEV_MODE_LOCALPREFIX))
+					tin->localPrefix = net;
+
+				if (!strcmp(c->opt->name, ARG_TUN_DEV_MODE_REMOTEPREFIX))
+					tin->remotePrefix = net;
+
+				if (!strcmp(c->opt->name, ARG_TUN_DEV_INGRESS))
+					tin->ingressPrefix = net;
+
+				tin->af = net.af;
+			}
+			
+			af = net.af;
+
+
+		} else if (!strcmp(c->opt->name, ARG_TUN_DEV_REMOTE_DUMMY)) {
+
+			struct net_key p6 = ZERO_NET6_KEY;
+
+			if (c->val) {
+
+				struct hna_node *un_remote = NULL;
+
+				if (str2netw(c->val, &p6.ip, cn, NULL, &p6.af, YES) == FAILURE ||
+					!is_ip_valid(&p6.ip, p6.af) ||
+					(un_remote = find_overlapping_hna(&p6.ip, 128, NULL))) {
+
+					dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid %s=%s %s=%s or blocked by nodeId=%s",
+						ARG_TUN_DEV, patch->val, ARG_TUN_DEV_REMOTE_DUMMY, c->val,
+						(un_remote && un_remote->on) ? cryptShaAsString(&un_remote->on->k.nodeId) : DBG_NIL);
+
+					return FAILURE;
+				}
+
+				set_opt_child_val(c, netAsStr(&p6));
+			}
+
+			if (cmd == OPT_APPLY && tin) {
+				tin->localRemoteIp6 = p6.ip;
+				tin->localRemote_manual = c->val ? 1 : 0;
+			}
+
+		} else if (!strcmp(c->opt->name, ARG_TUN_DEV_MODE_REMOTE)) {
+
+			if (cmd == OPT_APPLY && tin)
+				tin->remotePrefixMode = c->val ? strtol(c->val, NULL, 10) : DEF_TUN_DEV_MODE;
+
+
+		} else if (!strcmp(c->opt->name, ARG_TUN_DEV_MODE_REMOTE_MIN)) {
+
+			if (cmd == OPT_APPLY && tin)
+				tin->remotePrefixMin = c->val ? strtol(c->val, NULL, 10) : 0;
+
+
+		} else if (!strcmp(c->opt->name, ARG_TUN_OUT)) {
+
+			if (c->val && (strlen(c->val) >= NETWORK_NAME_LEN ||
+				validate_name_string(c->val, strlen(c->val) + 1, NULL) != SUCCESS)) {
+
+				return FAILURE;
+
+			} else if (cmd == OPT_APPLY && tin) {
+
+				memset(&tin->tunSearchNameKey, 0, sizeof(IFNAME_T));
+
+				if (c->val)
+					strcpy(tin->tunSearchNameKey, c->val);
+			}
+
+		} else if (!strcmp(c->opt->name, ARG_TUN_DEV_MODE_LOCAL)) {
+
+			if (cmd == OPT_APPLY && tin)
+				tin->localPrefixMode = c->val ? strtol(c->val, NULL, 10) : DEF_TUN_DEV_MODE;
+
+
+		} else if (!strcmp(c->opt->name, ARG_TUN_DEV_MODE_LOCAL_MAX)) {
+
+			if (cmd == OPT_APPLY && tin)
+				tin->localPrefixMax = c->val ? strtol(c->val, NULL, 10) : 0;
+
+
+		} else if (!strcmp(c->opt->name, ARG_TUN_PROTO_ADV)) {
+
+			if (cmd == OPT_APPLY && tin)
+				tin->advProto = c->val ? strtol(c->val, NULL, 10) : DEF_TUN_PROTO_ADV;
+
+		}
 	}
+
+	if (!af) {
+		dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "No address family specified via args: %s, %s, %s, %s",
+			ARG_TUN_DEV_ADDR, ARG_TUN_DEV_MODE_LOCALPREFIX, ARG_TUN_DEV_MODE_REMOTEPREFIX, ARG_TUN_DEV_INGRESS);
+		return FAILURE;
+	}
+
+	return SUCCESS;
 }
 
 STATIC_FUNC
 int32_t opt_tun_in_dev(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct opt_parent *patch, struct ctrl_node *cn)
 {
 	TRACE_FUNCTION_CALL;
-	struct tun_in_node *tin = NULL;
 
 	if (cmd == OPT_ADJUST || cmd == OPT_CHECK || cmd == OPT_APPLY) {
 
-		struct opt_child *c = NULL;
 		char name[NETWORK_NAME_LEN] = {0};
+		snprintf(name, sizeof(name), "%s%s", tun_name_prefix.str, patch->val);
+		struct tun_dev_in *tin = avl_find_item(&tun_in_tree, name);
 
 		dbgf_all(DBGT_INFO, "diff=%d cmd=%s  save=%d  opt=%s  patch=%s",
 			patch->diff, opt_cmd2str[cmd], _save, opt->name, patch->val);
 
-		if (strlen(patch->val) >= NETWORK_NAME_LEN - strlen(tun_name_prefix.str) ||
+		if ( (!tin && tun_in_tree.items >= MAX_AUTO_TUNID_OCT) ||
+			strlen(patch->val) >= NETWORK_NAME_LEN - strlen(tun_name_prefix.str) ||
 			validate_name_string(patch->val, strlen(patch->val) + 1, NULL) != SUCCESS) {
 
 			dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid name: %s %s", patch->val, tun_name_prefix.str);
-
 			return FAILURE;
 		}
 
-		sprintf(name, "%s%s", tun_name_prefix.str, patch->val);
-
-		tin = avl_find_item(&tun_in_tree, name);
-
-		if (!tin && tun_in_tree.items >= MAX_AUTO_TUNID_OCT)
-			return FAILURE;
-
 		if (cmd == OPT_APPLY) {
 
+			upd_tun_bit_node(DEL, NULL, NULL);
+			purge_tunCatchTree(NULL);
+
 			if (tin)
-				configure_tunnel_in(DEL, tin, -1);
+				configure_tunnel_in(DEL, tin);
+
+
+			assertion(-500000, IMPLIES(tin, !tin->tun_dev_offer_tree.items));
+			assertion(-500000, IMPLIES(tin, !tin->upIfIdx));
 
 			if (tin && patch->diff == DEL) {
 
@@ -2478,136 +2964,37 @@ int32_t opt_tun_in_dev(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct 
 				tin = NULL;
 
 			} else if (!tin && patch->diff != DEL) {
-				tin = debugMallocReset(sizeof(struct tun_in_node), -300469);
+				tin = debugMallocReset(sizeof(struct tun_dev_in), -300469);
 				strcpy(tin->nameKey.str, name);
-				tin->tun6Id = -1;
-				tin->remote = ZERO_IP;
-				tin->tunAddr46[1] = ZERO_NET4_KEY;
-				tin->tunAddr46[0] = ZERO_NET6_KEY;
-				tin->remote_manual = 0;
+				tin->tun6Id = get_free_tun6Id();
+				tin->localRemoteIp6 = ZERO_IP;
+				tin->tunAddr = ZERO_NET_KEY;
+				tin->ingressPrefix = ZERO_NET_KEY;
+				tin->remotePrefix = ZERO_NET_KEY;
+				tin->localPrefix = ZERO_NET_KEY;
+
+				tin->localRemote_manual = 0;
 				tin->advProto = DEF_TUN_PROTO_ADV;
-				AVL_INIT_TREE(tin->tun_dev_tree, struct tun_dev_node, nameKey);
+				AVL_INIT_TREE(tin->tun_dev_offer_tree, struct tun_dev_offer, tunOutKey);
 				avl_insert(&tun_in_tree, tin, -300470);
 			}
 		}
 
-		while ((c = list_iterate(&patch->childs_instance_list, c))) {
+		if (patch->diff != DEL && opt_tun_in_dev_args(cmd, opt, patch, cn, tin) != SUCCESS)
+			return FAILURE;
 
-			if (!strcmp(c->opt->name, ARG_TUN_DEV_ADDR4) || !strcmp(c->opt->name, ARG_TUN_DEV_ADDR6)) {
+		if (cmd == OPT_APPLY) {
 
-				struct net_key net = ZERO_NET_KEY;
-				net.af = !strcmp(c->opt->name, ARG_TUN_DEV_ADDR4) ? AF_INET : AF_INET6;
-				struct hna_node *hna;
+			assertion(-500000, IMPLIES(tin, tin->af));
 
-				if (!c->val) {
+			if (tin)
+				configure_tunnel_in(ADD, tin);
 
-					net = ZERO_NET_KEY;
+			upd_tun_bit_node(ADD, NULL, NULL);
 
-				} else if (str2netw(c->val, &net.ip, cn, &net.mask, &net.af, YES) == FAILURE ||
-					!is_ip_valid(&net.ip, net.af)) {
-
-					return FAILURE;
-
-				} else if (net.mask < (net.af == AF_INET ? HNA4_PREFIXLEN_MIN : HNA6_PREFIXLEN_MIN)) {
-
-					return FAILURE;
-
-				} else if (net.af == AF_CFG && (hna = find_overlapping_hna(&net.ip, net.mask, NULL))) {
-
-					dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "%s=%s /%s=%s already used by nodeId=%s hna=%s",
-						opt->name, patch->val, c->opt->name, netAsStr(&net),
-						hna->on ? cryptShaAsString(&hna->on->k.nodeId) : "mySelf", netAsStr(&hna->key));
-
-					return FAILURE;
-
-				} else if (cmd == OPT_ADJUST) {
-
-					set_opt_child_val(c, netAsStr(&net));
-				}
-
-				if (cmd == OPT_APPLY && tin)
-					tin->tunAddr46[!strcmp(c->opt->name, ARG_TUN_DEV_ADDR4)] = net;
-
-
-			} else if (!strcmp(c->opt->name, ARG_TUN_DEV_REMOTE)) {
-
-				struct net_key p6 = ZERO_NET6_KEY;
-
-				if (c->val) {
-
-					struct hna_node *un_remote = NULL;
-
-					if (str2netw(c->val, &p6.ip, cn, NULL, &p6.af, YES) == FAILURE ||
-						!is_ip_valid(&p6.ip, p6.af) ||
-						(un_remote = find_overlapping_hna(&p6.ip, 128, NULL))) {
-
-						dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid %s=%s %s=%s or blocked by nodeId=%s",
-							ARG_TUN_DEV, patch->val, ARG_TUN_DEV_REMOTE, c->val,
-							(un_remote && un_remote->on) ? cryptShaAsString(&un_remote->on->k.nodeId) : DBG_NIL);
-
-						return FAILURE;
-					}
-
-					set_opt_child_val(c, netAsStr(&p6));
-				}
-
-				if (cmd == OPT_APPLY && tin) {
-					tin->remote = p6.ip;
-					tin->remote_manual = c->val ? 1 : 0;
-				}
-
-
-			} else if (!strcmp(c->opt->name, ARG_TUN_DEV_SRC4_TYPE) || !strcmp(c->opt->name, ARG_TUN_DEV_SRC6_TYPE)) {
-
-				if (cmd == OPT_APPLY && tin)
-					tin->srcType46[!strcmp(c->opt->name, ARG_TUN_DEV_SRC4_TYPE)] = c->val ? strtol(c->val, NULL, 10) : 0;
-
-			} else if (!strcmp(c->opt->name, ARG_TUN_DEV_INGRESS4) || !strcmp(c->opt->name, ARG_TUN_DEV_INGRESS6)) {
-
-				IDM_T isv4 = !strcmp(c->opt->name, ARG_TUN_DEV_INGRESS4);
-				struct net_key net = isv4 ? ZERO_NET4_KEY : ZERO_NET6_KEY;
-
-				if (c->val) {
-
-					if (str2netw(c->val, &net.ip, cn, &net.mask, &net.af, NO) == FAILURE ||
-						!is_ip_valid(&net.ip, net.af)) {
-
-						dbgf_cn(cn, DBGL_SYS, DBGT_ERR, "invalid %s=%s %s",
-							isv4 ? ARG_TUN_DEV_INGRESS4 : ARG_TUN_DEV_INGRESS4, patch->val, c->val);
-						return FAILURE;
-					}
-				}
-
-				if (cmd == OPT_APPLY && tin)
-					tin->ingressPrefix46[isv4] = net;
-
-
-			} else if (!strcmp(c->opt->name, ARG_TUN_DEV_SRC4_MIN) || !strcmp(c->opt->name, ARG_TUN_DEV_SRC6_MIN)) {
-
-				if (cmd == OPT_APPLY && tin)
-					tin->srcPrefixMin46[!strcmp(c->opt->name, ARG_TUN_DEV_SRC4_MIN)] = c->val ? strtol(c->val, NULL, 10) : 0;
-
-			} else if (!strcmp(c->opt->name, ARG_TUN_PROTO_ADV)) {
-
-				if (cmd == OPT_APPLY && tin)
-					tin->advProto = c->val ? strtol(c->val, NULL, 10) : DEF_TUN_PROTO_ADV;
-
-			}
+			eval_tun_bit_tree(NULL);
 		}
 	}
-
-
-	if (cmd == OPT_APPLY) {
-
-		upd_tun_bit_node(DEL, NULL, NULL);
-		purge_tunCatchTree();
-		reconfigure_tun_ins();
-
-		upd_tun_bit_node(ADD, NULL, NULL);
-		eval_tun_bit_tree(NULL);
-
-	}
-
 	return SUCCESS;
 }
 
@@ -2655,42 +3042,38 @@ int32_t opt_tun_state_dedicated_to(uint8_t cmd, uint8_t _save, struct opt_type *
 		prev_to = tun_dedicated_to;
 		tun_dedicated_to = patch->diff != DEL ? strtol(patch->val, NULL, 10) : DEF_TUN_OUT_TO;
 
-		struct tun_out_node *ton;
+		struct tun_dev_offer *ton;
 		struct avl_node *an = NULL;
 
 		while ((ton = avl_iterate_item(&tun_out_tree, &an))) {
-			uint8_t isv4;
-			struct tun_dev_node *tdnUP;
+			struct tun_dev_out *tdnUP;
 
-			for (isv4 = 0; isv4 <= 1; isv4++) {
+			if ((tdnUP = ton->tdnCatchAll)) {
 
-				if ((tdnUP = ton->tdnCatchAll[isv4])) {
+				assertion(-501544, (tdnUP->tunCatch_fd > 0));
 
-					assertion(-501544, (tdnUP->tunCatch_fd > 0));
+				if (tun_dedicated_to == 0) {
+					tun_out_state_set(ton, TDN_STATE_DEDICATED);
+				} else if (tun_dedicated_to > 0) {
 
-					if (tun_dedicated_to == 0) {
-						tun_out_state_set(ton, TDN_STATE_DEDICATED);
-					} else if (tun_dedicated_to > 0) {
-
-					}
 				}
+			}
 
-				if ((tdnUP = ton->tdnDedicated[isv4])) {
+			if ((tdnUP = ton->tdnDedicated)) {
 
-					assertion(-501545, (tdnUP->tunCatch_fd == 0));
+				assertion(-501545, (tdnUP->tunCatch_fd == 0));
 
-					if (tun_dedicated_to > 0) {
-						tun_out_state_set(ton, TDN_STATE_CATCHALL);
-					} else if (tun_dedicated_to == 0) {
-						if (prev_to > 0)
-							task_remove(tun_out_state_catchAll, ton);
-					}
+				if (tun_dedicated_to > 0) {
+					tun_out_state_set(ton, TDN_STATE_CATCHALL);
+				} else if (tun_dedicated_to == 0) {
+					if (prev_to > 0)
+						task_remove(tun_out_state_catchAll, ton);
 				}
 			}
 		}
 
 		if (prev_to > 0 && tun_dedicated_to == 0)
-			purge_tunCatchTree();
+			purge_tunCatchTree(NULL);
 	}
 	return SUCCESS;
 }
@@ -2704,16 +3087,13 @@ int32_t opt_tun_out_mtu(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct
 
 		tun_out_mtu = patch->diff != DEL ? strtol(patch->val, NULL, 10) : DEF_TUN_OUT_MTU;
 
-		struct tun_out_node *ton;
+		struct tun_dev_offer *ton;
 		struct avl_node *an = NULL;
 
 		while ((ton = avl_iterate_item(&tun_out_tree, &an))) {
-			uint8_t isv4;
-			for (isv4 = 0; isv4 <= 1; isv4++) {
-				struct tun_dev_node *tdnUP = ton->tdnDedicated[isv4];
-				if (tdnUP && tun_out_mtu != tdnUP->curr_mtu)
-					tdnUP->curr_mtu = set_tun_out_mtu(tdnUP->nameKey.str, tdnUP->orig_mtu, DEF_TUN_OUT_MTU, tun_out_mtu);
-			}
+			struct tun_dev_out *tdnUP = ton->tdnDedicated;
+			if (tdnUP && tun_out_mtu != tdnUP->curr_mtu)
+				tdnUP->curr_mtu = set_tun_out_mtu(tdnUP->nameKey.str, tdnUP->orig_mtu, DEF_TUN_OUT_MTU, tun_out_mtu);
 		}
 	}
 	return SUCCESS;
@@ -2778,6 +3158,64 @@ int32_t opt_tun_address(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct
 
 
 
+int32_t opt_find_prefix(uint8_t cmd, uint8_t _save, struct opt_type *opt, struct opt_parent *patch, struct ctrl_node *cn)
+{
+        TRACE_FUNCTION_CALL;
+#define ARG_FIND_PREFIX "findPrefix"
+#define ARG_FIND_PREFIX_MASK "mask"
+#define ARG_MATCH_PREFIX "matchPrefix"
+
+        if ( cmd == OPT_CHECK) {
+
+                int32_t mask = 48;
+		struct net_key match = ZERO_NET_KEY;
+
+                struct opt_child *c = NULL;
+		while ((c = list_iterate(&patch->childs_instance_list, c))) {
+
+			if (!strcmp(c->opt->name, ARG_FIND_PREFIX_MASK))
+				mask = strtol(c->val, NULL, 10);
+
+			if (!strcmp(c->opt->name, ARG_MATCH_PREFIX))
+				str2netw(c->val, &match.ip, NULL, &match.mask, &match.af, NO);
+		}
+
+		struct net_key range = ZERO_NET_KEY;
+		struct net_key result = ZERO_NET_KEY;
+		str2netw(patch->val, &range.ip, NULL, &range.mask, &range.af, NO);
+		_find_free_local_prefix(&range, mask, &result, cn);
+
+
+		uint8_t min = XMIN(result.mask, match.mask);
+		IPX_T r = result.ip;
+		IPX_T m = match.ip;
+		ip_netmask_validate(&r, min, result.af, YES /*force*/);
+		ip_netmask_validate(&m, min, match.af, YES /*force*/);
+
+		dbgf_cn(cn, DBGL_CHANGES, DBGT_INFO, "range=%s>=%d (%s) -> result=%s -> %s/%d (%s) match=%s -> %s/%d (%s) equal=%d",
+			netAsStr(&range), mask, memAsHexStringSep(&range.ip, sizeof(range.ip), 4, ":"),
+			netAsStr(&result), ipXAsStr(result.af, &r), min, memAsHexStringSep(&r, sizeof(r), 4, ":"),
+			netAsStr(&match), ipXAsStr(match.af, &m), min, memAsHexStringSep(&m, sizeof(m), 4, ":"),
+			is_ip_equal(&m, &r));
+
+
+/*
+		upd_tun_bit_node(DEL, NULL, NULL);
+		purge_tunCatchTree(NULL);
+		upd_tun_bit_node(ADD, NULL, NULL);
+*/
+
+		struct tun_dev_in *tin;
+		struct avl_node *an = NULL;
+		for (an = NULL; (tin = avl_iterate_item(&tun_in_tree, &an));) {
+			configure_tunnel_in(DEL, tin);
+			purge_tunCatchTree(tin);
+			configure_tunnel_in(ADD, tin);
+		}
+		eval_tun_bit_tree(NULL);
+	}
+	return SUCCESS;
+}
 
 
 
@@ -2806,36 +3244,38 @@ static struct opt_type tun_options[]= {
 	"        eg: " ARG_TUN_DEV "=Default (resulting interface name would be: " DEF_TUN_NAME_PREFIX "Default )\n"
 	"        WARNING: This creates a general ipip tunnel device allowing to tunnel arbitrary IP packets to this node!\n"
 	"        Use firewall rules to filter deprecated packets!"},
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_ADDR4,  0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        0,              0,0,            opt_tun_in_dev,
-			ARG_ADDR_FORM,HLP_TUN_DEV_ADDR4},
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_ADDR6,  0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        0,              0,0,            opt_tun_in_dev,
-			ARG_ADDR_FORM,HLP_TUN_DEV_ADDR6},
-#ifndef LESS_OPTIONS
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_REMOTE,0,9,1,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,		0,	        0,              0,0,            opt_tun_in_dev,
+
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_ADDR,  0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        0,              0,0,            opt_tun_in_dev,
+			ARG_ADDR_FORM,HLP_TUN_DEV_ADDR},
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_INGRESS,  0,9,1,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        0,              0,0,            opt_tun_in_dev,
+			ARG_NETW_FORM, HLP_TUN_DEV_INGRESS},
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_MODE_LOCALPREFIX,  0,9,1,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        0,              0,0,            opt_tun_in_dev,
+			ARG_NETW_FORM,HLP_TUN_DEV_MODE_LOCALXPREFIX},
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_MODE_LOCAL,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,MIN_TUN_DEV_MODE,MAX_TUN_DEV_MODE,DEF_TUN_DEV_MODE,0,    opt_tun_in_dev,
+			ARG_VALUE_FORM, HLP_TUN_DEV_MODE_LOCAL},
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_MODE_LOCAL_MAX,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        128,             0,0,            opt_tun_in_dev,
+			ARG_VALUE_FORM, HLP_TUN_DEV_MODE_LOCALX_MAX},
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_MODE_REMOTEPREFIX,  0,9,1,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        0,              0,0,            opt_tun_in_dev,
+			ARG_NETW_FORM,HLP_TUN_DEV_MODE_REMOTEXPREFIX},
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_MODE_REMOTE,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,MIN_TUN_DEV_MODE,MAX_TUN_DEV_MODE,DEF_TUN_DEV_MODE,0,   opt_tun_in_dev,
+			ARG_VALUE_FORM, HLP_TUN_DEV_MODE_REMOTEX},
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_MODE_REMOTE_MIN,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        128,             0,0,            opt_tun_in_dev,
+			ARG_VALUE_FORM, HLP_TUN_DEV_MODE_REMOTEX_MIN},
+	{ODI,ARG_TUN_DEV,ARG_TUN_OUT,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,   0,		0,              0,              0,0,            opt_tun_in_dev,
+			ARG_NAME_FORM,	"tunOut config allowed to trigger automatic tunnel source address (prefix) configuration"},
+
+	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_REMOTE_DUMMY,0,9,1,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	0,	        0,              0,0,            opt_tun_in_dev,
 			ARG_IP_FORM,	"remote dummy ip of tunnel interface"},
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_INGRESS4,  0,9,1,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        0,              0,0,            opt_tun_in_dev,
-			ARG_NETW_FORM,"IPv4 source prefix (ingress filter)"},
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_INGRESS6,  0,9,1,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        0,              0,0,            opt_tun_in_dev,
-			ARG_NETW_FORM,"IPv6 source prefix (ingress filter)"},
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_SRC4_TYPE,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,TUN_SRC_TYPE_MIN,TUN_SRC_TYPE_MAX,TUN_SRC_TYPE_UNDEF,0,    opt_tun_in_dev,
-			ARG_VALUE_FORM, "IPv4 source address type (0 = static/global, 1 = static, 2 = auto, 3 = AHCP)"},
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_SRC4_MIN,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        32,             0,0,            opt_tun_in_dev,
-			ARG_VALUE_FORM, "IPv4 source prefix len usable for address auto configuration (0 = NO autoconfig)"},
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_SRC6_TYPE,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,TUN_SRC_TYPE_MIN,TUN_SRC_TYPE_MAX,TUN_SRC_TYPE_UNDEF,0,    opt_tun_in_dev,
-			ARG_VALUE_FORM, "IPv6 source address type (0 = static/global, 1 = static, 2 = auto, 3 = AHCP)"},
-	{ODI,ARG_TUN_DEV,ARG_TUN_DEV_SRC6_MIN,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,	        128,            0,0,            opt_tun_in_dev,
-			ARG_VALUE_FORM, "IPv6 source prefix len usable for address auto configuration (0 = NO autoconfig)"},
 	{ODI,ARG_TUN_DEV,ARG_TUN_PROTO_ADV, 0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0, MIN_TUN_PROTO_ADV,MAX_TUN_PROTO_ADV,DEF_TUN_PROTO_ADV,0,     opt_tun_in_dev,
 			ARG_VALUE_FORM, HLP_TUN_PROTO_ADV},
 
-#endif
         {ODI,0,ARG_TUN_IN,	 	0,9,2,A_PM1N,A_ADM,A_DYI,A_CFA,A_ANY,	0,		0,		0,		0,0,	        opt_tun_in,
 			ARG_NAME_FORM,"arbitrary but unique name for tunnel network to be announced with given sub criterias"},
 	{ODI,ARG_TUN_IN,ARG_TUN_IN_NET,'n',9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,  0,               0,              0,              0,0,            opt_tun_in,
 			ARG_ADDR_FORM,"network to be offered via incoming tunnel (mandatory)"},
 	{ODI,ARG_TUN_IN,ARG_TUN_IN_BW, 'b',9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,  0,		0,	        0,              0,0,            opt_tun_in,
 			ARG_VALUE_FORM,	HLP_TUN_IN_BW},
-	{ODI,ARG_TUN_IN,ARG_TUN_DEV,    0,9,1,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,   0,		0,              0,              0,0,            opt_tun_in,
+	{ODI,ARG_TUN_IN,ARG_TUN_DEV,    0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,   0,		0,              0,              0,0,            opt_tun_in,
 			ARG_NAME_FORM,	HLP_TUN_IN_DEV},
 	{ODI,ARG_TUN_IN,ARG_TUN_PROTO_ADV, 0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0, MIN_TUN_PROTO_ADV,MAX_TUN_PROTO_ADV,DEF_TUN_PROTO_ADV,0,      opt_tun_in,
 			ARG_VALUE_FORM, HLP_TUN_PROTO_ADV},
@@ -2848,12 +3288,10 @@ static struct opt_type tun_options[]= {
 			ARG_NETW_FORM,"additional source-address range to-be routed via tunnel"},
 	{ODI,ARG_TUN_OUT,ARG_TUN_PROTO_SEARCH,0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0, MIN_TUN_PROTO_SEARCH,MAX_TUN_PROTO_SEARCH,DEF_TUN_PROTO_SEARCH,0,opt_tun_search,
 			ARG_VALUE_FORM, HLP_TUN_PROTO_SEARCH},
-	{ODI,ARG_TUN_OUT,ARG_TUN_PROTO_SET,0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0, MIN_TUN_PROTO_SET,MAX_TUN_PROTO_SET,DEF_TUN_PROTO_SET,0,opt_tun_search,
+	{ODI,ARG_TUN_OUT,ARG_TUN_PROTO_SET,0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0, MIN_TUN_PROTO_SET,MAX_TUN_PROTO_SET,DEF_TUN_PROTO_SET,0,      opt_tun_search,
 			ARG_VALUE_FORM, HLP_TUN_PROTO_SET},
-#ifndef LESS_OPTIONS
-	{ODI,ARG_TUN_OUT,ARG_TUN_OUT_TYPE,0,9,0,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,      TUN_SRC_TYPE_MIN,TUN_SRC_TYPE_MAX,TUN_SRC_TYPE_UNDEF,0,   opt_tun_search,
-			ARG_VALUE_FORM, "tunnel ip allocation mechanism (0 = static/global, 1 = static, 2 = auto, 3 = AHCP)"},
-#endif
+	{ODI,ARG_TUN_OUT,ARG_TUN_DEV,    0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,   0,		0,              0,              0,0,            opt_tun_search,
+			ARG_NAME_FORM,	HLP_TUN_IN_DEV},
 	{ODI,ARG_TUN_OUT,ARG_TUN_OUT_GWNAME,0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,	        0,              0,              0,0,            opt_tun_search,
 			ARG_NAME_FORM,  "hostname of remote tunnel endpoint"},
 	{ODI,ARG_TUN_OUT,ARG_TUN_OUT_PREFIX_MIN,0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,MIN_TUN_OUT_PREFIX,MAX_TUN_OUT_PREFIX,DEF_TUN_OUT_PREFIX_MIN,0,opt_tun_search,
@@ -2880,6 +3318,13 @@ static struct opt_type tun_options[]= {
 			ARG_VALUE_FORM,"do not add route to bmx7 tun table!  Requires quagga plugin!"},
 	{ODI,ARG_TUN_OUT,ARG_EXPORT_DISTANCE,0,9,2,A_CS1,A_ADM,A_DYI,A_CFA,A_ANY,0,MIN_EXPORT_DISTANCE,MAX_EXPORT_DISTANCE,DEF_EXPORT_DISTANCE,0,opt_tun_search,
 			ARG_VALUE_FORM,	"export distance to network (256 == no export). Requires quagga plugin!"},
+	{ODI,0, ARG_FIND_PREFIX,	   0,  9,2, A_PS1N,A_USR, A_DYN, A_ARG, A_ANY, 0,        0,              0,             0,0,             opt_find_prefix,
+			ARG_NETW_FORM,	""},
+	{ODI,ARG_FIND_PREFIX,ARG_FIND_PREFIX_MASK,0,9,2,A_CS1,A_USR,A_DYN,A_ARG,A_ANY,0,         0,             128,            0,0,             opt_find_prefix,
+			ARG_VALUE_FORM,	""},
+	{ODI,ARG_FIND_PREFIX,ARG_MATCH_PREFIX,0,9,2,A_CS1,A_USR,A_DYN,A_ARG,A_ANY,0,         0,             0,            0,0,             opt_find_prefix,
+			ARG_VALUE_FORM,	""}
+        ,
 
 	{ODI,0,ARG_TUNS,	        0,9,2,A_PS0,A_USR,A_DYN,A_ARG,A_ANY,	0,		0, 		0,		0,0, 		opt_status,
 			0,		"show announced and used tunnels and related networks"}
@@ -2892,40 +3337,50 @@ void tun_dev_event_hook(int32_t cb_id, void* unused)
 {
         TRACE_FUNCTION_CALL;
 
-//	IDM_T TODO_CheckIfThisFunctionIsneededAsPrimaryIpCanNotChangeAnymore;
-
-        struct tun_in_node *tun;
+        struct tun_dev_in *tun;
         struct avl_node *an = NULL;
         while ((tun = avl_iterate_item(&tun_in_tree, &an))) {
 
-                if (tun->upIfIdx && is_ip_local(&tun->remote)) {
+                if (tun->upIfIdx && is_ip_local(&tun->localRemoteIp6)) {
                         dbgf_sys(DBGT_WARN, "ERROR: %s=%s remote=%s already used!!!",
-				ARG_TUN_DEV, tun->nameKey.str, ip6AsStr(&tun->remote));
+				ARG_TUN_DEV, tun->nameKey.str, ip6AsStr(&tun->localRemoteIp6));
                         my_description_changed = YES;
                 }
         }
-
-	static IP6_T prev_primary_ip;
-
-	if ( memcmp(&prev_primary_ip, &my_primary_ip, sizeof(IP6_T))) {
-
-		prev_primary_ip = my_primary_ip;
-
-		reconfigure_tun_ins();
-	}
 }
 
 static void tun_cleanup(void)
 {
 	task_remove((void(*)(void*))eval_tun_bit_tree, ((void*) 1));
+	task_remove((void(*)(void*))eval_tun_bit_tree, ((void*) 0));
 
-	purge_tunCatchTree();
+	purge_tunCatchTree(NULL);
 
-	struct tun_in_node *tin;
+	struct tun_dev_in *tin;
 	while ((tin = avl_remove_first_item(&tun_in_tree, -300393))) {
-		configure_tunnel_in(DEL, tin, -1);
+		assertion(-500000, (!tin->tun_dev_offer_tree.items));
+		configure_tunnel_in(DEL, tin);
 		debugFree(tin, -300394);
 	}
+}
+
+
+
+
+STATIC_FUNC
+int32_t tx_frame_tun_request(struct tx_frame_iterator *it)
+{
+	struct hdr_tun_request *hdr = ((struct hdr_tun_request*) tx_iterator_cache_hdr_ptr(it));
+	struct msg_tun_request *msg = ((struct msg_tun_request*) tx_iterator_cache_msg_ptr(it));
+
+	return sizeof(struct msg_tun_request);
+
+}
+
+STATIC_FUNC
+int32_t rx_frame_tun_request(struct rx_frame_iterator *it)
+{
+	return TLV_RX_DATA_PROCESSED;
 }
 
 static int32_t tun_init(void)
@@ -2937,8 +3392,8 @@ static int32_t tun_init(void)
 	static const struct field_format tun6_adv_format[] = DESCRIPTION_MSG_TUN6_ADV_FORMAT;
 	static const struct field_format tun4in6_ingress_adv_format[] = DESCRIPTION_MSG_TUN4IN6_INGRESS_ADV_FORMAT;
 	static const struct field_format tun6in6_ingress_adv_format[] = DESCRIPTION_MSG_TUN6IN6_INGRESS_ADV_FORMAT;
-	static const struct field_format tun4in6_src_adv_format[] = DESCRIPTION_MSG_TUN4IN6_SRC_ADV_FORMAT;
-	static const struct field_format tun6in6_src_adv_format[] = DESCRIPTION_MSG_TUN6IN6_SRC_ADV_FORMAT;
+	static const struct field_format tun4in6_src_adv_format[] = DESCRIPTION_MSG_TUN4IN6_REMOTE_ADV_FORMAT;
+	static const struct field_format tun6in6_src_adv_format[] = DESCRIPTION_MSG_TUN6IN6_REMOTE_ADV_FORMAT;
 	static const struct field_format tun4in6_adv_format[] = DESCRIPTION_MSG_TUN4IN6_NET_ADV_FORMAT;
 	static const struct field_format tun6in6_adv_format[] = DESCRIPTION_MSG_TUN6IN6_NET_ADV_FORMAT;
 
@@ -2976,22 +3431,22 @@ static int32_t tun_init(void)
 	register_frame_handler(description_tlv_db, BMX_DSC_TLV_TUN6IN6_INGRESS, &tlv_handl);
 
 	tlv_handl.name = "DSC_TUN4IN6_SRC";
-	tlv_handl.min_msg_size = sizeof(struct dsc_msg_tun4in6src);
+	tlv_handl.min_msg_size = sizeof(struct dsc_msg_tun4in6remote);
 	tlv_handl.fixed_msg_size = 1;
 	tlv_handl.dextCompression = (int32_t*) & dflt_fzip;
 	tlv_handl.dextReferencing = (int32_t*) & fref_dflt;
-	tlv_handl.tx_frame_handler = create_dsc_tlv_tunXin6src;
-	tlv_handl.rx_frame_handler = process_dsc_tlv_tunXin6src;
+	tlv_handl.tx_frame_handler = create_dsc_tlv_tunXin6remote;
+	tlv_handl.rx_frame_handler = process_dsc_tlv_tunXin6remote;
 	tlv_handl.msg_format = tun4in6_src_adv_format;
 	register_frame_handler(description_tlv_db, BMX_DSC_TLV_TUN4IN6_SRC, &tlv_handl);
 
 	tlv_handl.name = "DSC_TUN6IN6_SRC";
-	tlv_handl.min_msg_size = sizeof(struct dsc_msg_tun6in6src);
+	tlv_handl.min_msg_size = sizeof(struct dsc_msg_tun6in6remote);
 	tlv_handl.fixed_msg_size = 1;
 	tlv_handl.dextCompression = (int32_t*) & dflt_fzip;
 	tlv_handl.dextReferencing = (int32_t*) & fref_dflt;
-	tlv_handl.tx_frame_handler = create_dsc_tlv_tunXin6src;
-	tlv_handl.rx_frame_handler = process_dsc_tlv_tunXin6src;
+	tlv_handl.tx_frame_handler = create_dsc_tlv_tunXin6remote;
+	tlv_handl.rx_frame_handler = process_dsc_tlv_tunXin6remote;
 	tlv_handl.msg_format = tun6in6_src_adv_format;
 	register_frame_handler(description_tlv_db, BMX_DSC_TLV_TUN6IN6_SRC, &tlv_handl);
 
@@ -3014,6 +3469,18 @@ static int32_t tun_init(void)
 	tlv_handl.rx_frame_handler = process_dsc_tlv_tunXin6net;
 	tlv_handl.msg_format = tun6in6_adv_format;
 	register_frame_handler(description_tlv_db, BMX_DSC_TLV_TUN6IN6_NET, &tlv_handl);
+
+
+	tlv_handl.name = "TUN_REQ";
+	tlv_handl.rx_processUnVerifiedLink = 0;
+	tlv_handl.min_msg_size = sizeof(struct msg_tun_request);
+	tlv_handl.fixed_msg_size = 1;
+	tlv_handl.tx_frame_handler = tx_frame_tun_request;
+	tlv_handl.rx_frame_handler = rx_frame_tun_request;
+	register_frame_handler(packet_frame_db, FRAME_TYPE_TUN_REQ, &tlv_handl);
+
+
+
 
 	set_tunXin6_net_adv_list = set_tunXin6_net_adv_list_handl;
 

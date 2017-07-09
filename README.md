@@ -1,6 +1,11 @@
-# BMX6
+s# BMX7
 
-Bmx6 is a mesh routing protocol for Linux based operating systems.
+Bmx7 is a mesh routing protocol for Linux based operating systems.
+It is based on bmx6 but provides new features such as:
+ * Securely entrusted multi-topology routing (SEMTOR).
+ * Link-capacity aware wireless metric for may80211 based radios
+ * IPv4 in IPv6 and IPv6 in IPv6 end-to-end tunnels
+ * Extended description using compression and re-referenced description content
 The following intro provides kind of tutorial to get started.
 
 ## Content
@@ -12,7 +17,7 @@ The following intro provides kind of tutorial to get started.
 *   [Autoconfiguration](#address-auto-and-manual-configuration)
 *   [Unicast Host Network Announcements (UHNA)](#unicast-host-network-announcements-uhna)
 *   [Tunnel Announcements](#tunnel-announcements)
-*   [Bmx6 Plugins](#bmx6-plugins)
+*   [Bmx7 Plugins](#bmx7-plugins)
     *   [Config Plugin](#config-plugin)
     *   [Json Plugin](#json-plugin)
     *   [SMS Plugin](#sms-plugin)
@@ -21,11 +26,11 @@ The following intro provides kind of tutorial to get started.
 
 
 Note: This document is written using Markdown syntax. Modifications should be
-synced via README.md file in bmx6 repositories [bmx6.net][bmx6] and [github.com][github].
+synced via README.md file in bmx7 repositories [bmx6.net][bmx7] and [github.com][github].
 Nice syntax examples are [here][syntax].
 
+  [github]: https://github.com/axn/bmx6/tree/bmx7
   [bmx6]: http://bmx6.net
-  [github]: https://github.com/axn/bmx6
   [syntax]: http://daringfireball.net/projects/markdown/syntax.text
 
 
@@ -33,12 +38,18 @@ Nice syntax examples are [here][syntax].
 
 ### Requirements ###
 
-The following tools are needed to obtain, compile, and install bmx6:
+The following tools are needed to obtain, compile, and install bmx7:
 * git (debian package: git-core)
 * gcc
 * make
+* libz-dev
+* libmbedtls-dev
+* libiw-dev
+* libjson0-dev (for later config plugin)
 
-The following Linux-kernel modules are needed (depending on used bmx6 features)
+
+
+The following Linux-kernel modules are needed (depending on used bmx7 features)
 * ipv6
 * tunnel6
 * ip6_tunnel
@@ -51,7 +62,7 @@ tar xzvf polarssl-1.3.3-gpl.tgz
 cd polarssl-1.3.3
 make
 sudo make install
-# compile bmx6 with: make EXTRA_CFLAGS="-DCRYPTLIB=POLARSSL_1_3_3"
+# compile bmx7 with: make EXTRA_CFLAGS="-DCRYPTLIB=POLARSSL_1_3_3"
 </pre>
 
 Mbedtls has been tested with debian and mbedtls-2.4.0:
@@ -70,13 +81,14 @@ sudo make install
 Latest development sources are available from bmx6 git repository:
 
 <pre>
-git clone git://qmp.cat/bmx6.git # alternative: https://github.com/axn/bmx6.git
+git clone https://github.com/axn/bmx6.git
 cd bmx6
+checkout bmx7
 </pre>
 
 ### Compile and Install
 
-To only compile the main bmx6 daemon (no bmx6 plugins):
+To only compile the main bmx7 daemon (no plugins):
 <pre>
 make
 sudo make install
@@ -87,18 +99,18 @@ sudo make install
 
 ## Installing in OpenWRT
 
-Bmx6 is currently in the official routing feed of OpenWRT, so to install it from a existing system you can use opkg:
+Bmx7 is currently in the official routing feed of OpenWRT and Lede, so to install it from a existing system you can use opkg:
 <pre>
-opkg install bmx6 bmx6-uci-config
+opkg install bmx7 bmx7-uci-config
 </pre>
 
 If you are compiling your own OpenWRT, you can add the routing feed (already enabled by default) which can be found here: https://github.com/openwrt-routing/packages
 
-Then run "make menuconfig" and select the bmx6 package in Networking -> Routing and redirection
+Then run "make menuconfig" and select the bmx7 package in Networking -> Routing and redirection
 
-It is recommended to select also, at least, the uci plugin (bmx6-uci-config)
+It is recommended to select also, at least, the uci plugin (bmx7-uci-config)
 
-You can select "luci-app-bmx6" to have a nice web interface for manage and monitorize the routing daemon.
+You can select "luci-app-bmx7" to have a nice web interface for manage and monitorize the routing daemon.
 
 Finally type "make" to build the image.
 
@@ -107,25 +119,25 @@ Finally type "make" to build the image.
 ### Starting
 
 In the most simple configuration, the only required parameter are the interfaces names that should be used for meshing.
-The following example starts bmx6 on interface wlan0:
+The following example starts bmx7 on interface wlan0:
 <pre>
-root@mlc1001:~# bmx6 dev=eth1
+root@mlc1001:~# bmx7 dev=eth1
 </pre>
 
 However, to let this simple command work as expected also check the following basic requirements:
 
-* bmx6 must be executed in root context (with super user permissions). If you are not already root, prepend all commands with sudo (eg: sudo bmx6 dev=eth1 ).
+* bmx7 must be executed in root context (with super user permissions). If you are not already root, prepend all commands with sudo (eg: sudo bmx7 dev=eth1 ).
 
-* NO IP address needs to be configured. By default bmx6 assumes IPv6 and autoconfigures an ULA based IPv6 address for each interface based on the MAC address of the device. Just, the interfaces must be UP. The linux ip command can do this for you (eg: ip link set wlan0 up ). Also, if you are using a wireless interface, the wireless interface settings must be set correctly so that link-layer connectivity is given with bmx6 daemons running on other nodes (computers). The good old iwconfig command may help to achieve that. For example: <pre> iwconfig wlan0 mode ad-hoc ap 02:ca:ff:ee:ba:be channel 11 essid my-mesh-network </pre> is a typical configuration for a wireless mesh setup.
+* NO IP address needs to be configured. By default bmx7 assumes IPv6 and autoconfigures a cryptographic generated ULA IPv6 address (CGA). Just, the interfaces must be UP. The linux ip command can do this for you (eg: ip link set wlan0 up ). Also, if you are using a wireless interface, the wireless interface settings must be set correctly so that link-layer connectivity is given with bmx7 daemons running on other nodes (computers). The good old iwconfig command may help to achieve that. For example: <pre> iwconfig wlan0 mode ad-hoc ap 02:ca:ff:ee:ba:be channel 11 essid my-mesh-network </pre> is a typical configuration for a wireless mesh setup.
 
-* Bmx6 (by default) works in daemon mode, thus sends itself to background and gives back a prompt. To let it run in foreground specify a debug level with the startup command like: <pre> bmx6 debug=0 dev=eth1 </pre>. Of course you may need to kill a previously started bmx6 daemon beforehand  ( killall bmx6 )
+* Bmx7 (by default) works in daemon mode, thus sends itself to background and gives back the prompt. To let it run in foreground specify a debug level with the startup command like: <pre> bmx7 debug=0 dev=eth1 </pre>. Of course you may need to kill a previously started bmx7 daemon beforehand  ( killall bmx7 )
 
-If everything went fine bmx6 is running now, searches for neighboring bmx6 daemons via the configured interface (link), and coordinates with them to learn about existence-of and routes-to all other bmx6 nodes in the network.
+If everything went fine bmx7 is running now, searches for neighboring bmx7 daemons via the configured interface (link), and coordinates with them to learn about existence-of and routes-to all other bmx7 nodes in the network.
 
 
-### Accessing Protocol Events, Status, and Network Information¶
+### Accessing Protocol Events, Status, and Network Information
 
-To access debug and status information of the bmx6 daemon which has just been started, a second bmx6 process can be launched in client mode (with the `--connect` or `-c` parameter) to connect to the main bmx6 daemon and retrieve the desired information.
+To access debug and status information of the bmx7 daemon which has just been started, a second bmx7 process can be launched in client mode (with the `--connect` or `-c` parameter) to connect to the main bmx7 daemon and retrieve the desired information.
 
 In the following, a few example will be discussed. Continuous debug levels with different verbosity and scope are accessible with the `--debug` or `-d` parameter.
 
@@ -134,7 +146,7 @@ In the following, a few example will be discussed. Continuous debug levels with 
 * Debug level 4 reports everything.
 * Debug level 12 dump in and outgoing protocol traffic
 
-Eg.: `bmx6 -cd3` connects a bmx6 client process to debug-level 3 of the main daemon and logs the output stdout until terminated with `ctrl-c`
+Eg.: `bmx7 -cd3` connects a bmx7 client process to debug-level 3 of the main daemon and logs the output stdout until terminated with `ctrl-c`
 Status, network, and statistic information are accessible with dedicated parameters:
 
 * `status`
@@ -146,35 +158,20 @@ Status, network, and statistic information are accessible with dedicated paramet
 * `traffic=DEV` where DEV:= all or eth1, ....
 
 <pre>
-root@mlc1001:~# bmx6 -c status
-version        compatibility codeVersion globalId                     primaryIp                       myLocalId uptime     cpu nodes
-BMX6-0.1-alpha 16            9           mlc1001.7A7422752001EC4AC4C8 fd66:66:66:0:a2cd:efff:fe10:101 24100101  0:00:40:37 0.1 4
+root@mlc1001:~# bmx7 -c status
+STATUS:
+shortId  name    nodeKey linkKeys          revision primaryIp                               tun6Address            tun4Address uptime     cpu txQ  rxBpP   txBpP   nbs rts nodes 
+A7F0818D mlc1000 RSA2048 RSA896,DH2048M112 dff585f  fd70:a7f0:818d:18c5:f017:395a:8506:accd 2012:3001:0:1100::1/56 1.1.17.1/24 0:04:33:32 0.0 0/50 188/1.2 134/1.2 1   2   3/3  
 </pre>
 
-So apart from version, compatibility number, and code, the status reveals the daemon's [Global ID](wiki#global-id) and [Local ID](wiki#local-id), its primary (self-configured) IPv6 address, the time since when it is running (40 minutes), its current cpu consumption (0.1%) and the total number of 4 learned nodes in the network (including itself).
+So apart from (git-) revision, the status reveals the daemon's [Global ID (short version)](wiki#global-id), its primary (self-configured) IPv6 address, the time since when it is running (40 minutes), its current cpu consumption (0.1%) and the total number of 4 learned nodes in the network (including itself).
 
 These desired types can be combined. Also the above given example shows kind of shortcut.
 The long argument would be:
-`bmx6 connect show=status`. A more informative case using the long form would be:
+`bmx7 connect show=status`. A more informative case using the long form would be:
 
 <pre>
-root@mlc1001:~# bmx6 connect show=status show=interfaces show=links show=originators show=tunnels
-status:
-version        compatibility codeVersion globalId                     primaryIp                       myLocalId uptime     cpu nodes
-BMX6-0.1-alpha 16            9           mlc1001.7A7422752001EC4AC4C8 fd66:66:66:0:a2cd:efff:fe10:101 06100101  0:00:53:19 0.3 4
-interfaces:
-devName state type     rateMin rateMax llocalIp                    globalIp                           multicastIp primary
-eth1    UP    ethernet 1000M   1000M   fe80::a2cd:efff:fe10:101/64 fd66:66:66:0:a2cd:efff:fe10:101/64 ff02::2     1
-links:
-globalId                     llocalIp                 viaDev rxRate txRate bestTxLink routes wantsOgms nbLocalId
-mlc1000.0AE58311046412F248CD fe80::a2cd:efff:fe10:1   eth1   100    100    1          1      1         9B100001
-mlc1002.91DCF042934B5913BB00 fe80::a2cd:efff:fe10:201 eth1   100    100    1          2      1         BB100201
-originators:
-globalId                     blocked primaryIp                       routes viaIp                    viaDev metric lastDesc lastRef
-mlc1000.0AE58311046412F248CD 0       fd66:66:66:0:a2cd:efff:fe10:1   1      fe80::a2cd:efff:fe10:1   eth1   999M   3193     3
-mlc1001.7A7422752001EC4AC4C8 0       fd66:66:66:0:a2cd:efff:fe10:101 0      ::                       ---    128G   3197     0
-mlc1002.91DCF042934B5913BB00 0       fd66:66:66:0:a2cd:efff:fe10:201 1      fe80::a2cd:efff:fe10:201 eth1   999M   3196     3
-mlc1003.09E796BC491D386248C3 0       fd66:66:66:0:a2cd:efff:fe10:301 1      fe80::a2cd:efff:fe10:201 eth1   576M   22       3
+root@mlc1001:~# bmx7 connect show=status show=interfaces show=links show=originators show=tunnels
 </pre>
 
 Only if relevant information for a requested type is available it will be shown.
@@ -183,7 +180,7 @@ In this example no tunnels are configured nor offered by other nodes and therefo
 The loop argument can be prepended to the connect argument to continuously show the requested information.
 Many of the long arguments are usable via a short notation, like `l` for `loop`, `c` for `connect`, `s` for `show`, `d` for `debug`.
 And there is another shortcut summarizing my current favorite information types via debug level 8
-The following commands do the same as above: bmx6 -lc status interfaces links originators tunnels or just `bmx6 -lcd8` .
+The following commands do the same as above: bmx7 -lc status interfaces links originators tunnels or just `bmx7 -lcd8` .
 Description of the provided info:
 
     interfaces: Followed by one line per configured interface
@@ -192,9 +189,9 @@ Description of the provided info:
         rateMin and rateMax: Min- and maximum transmit rates assumed for this interface.
         llocalIp: IPv6 link-local address (used as source address for all outgoing protocol data).
         globalIp: Autoconfigured address used for sending network traffic via this interface and which is propagated to other nodes.
-        multicastIp: Multicast IP (used as destination address for all bmx6 protocol traffic send via this interface).
+        multicastIp: Multicast IP (used as destination address for all bmx7 protocol traffic send via this interface).
         primary: Indicates whether the global ip of this interface is used as primary ip for this daemon.
-    links: Followed by one line per detected neighboring bmx6 node.
+    links: Followed by one line per detected neighboring bmx7 node.
         globalId: GlobalId of that neighbor (see: Wiki ).
         llocalIp: Link-local IP of the neighbor's interface building the other side of the link.
         viaDev: Interface of this node for the link.
@@ -232,44 +229,30 @@ mlc1000 --- mlc1001 --- mlc1002 - - - mlc1003
 
 This could be verified using traceroute6 towards the primary IP of the other nodes.
 
-To mlc1000's primary IP fd66:66:66:0:a2cd:efff:fe10:1 shows one hop:
-
-<pre>
-root@mlc1001:~# traceroute6 -n -q 1 fd66:66:66:0:a2cd:efff:fe10:1
-traceroute to fd66:66:66:0:a2cd:efff:fe10:1 (fd66:66:66:0:a2cd:efff:fe10:1), 30 hops max, 80 byte packets
- 1  fd66:66:66:0:a2cd:efff:fe10:1  0.324 ms
-</pre>
-
-To mlc1002's primary IP fd66:66:66:0:a2cd:efff:fe10:201 shows one hop:
-
-<pre>
-root@mlc1001:~# traceroute6 -n -q 1 fd66:66:66:0:a2cd:efff:fe10:201
-traceroute to fd66:66:66:0:a2cd:efff:fe10:201 (fd66:66:66:0:a2cd:efff:fe10:201), 30 hops max, 80 byte packets
- 1  fd66:66:66:0:a2cd:efff:fe10:201  0.302 ms
-</pre>
-
 To mlc1003's primary IP fd66:66:66:0:a2cd:efff:fe10:301 shows two hops:
 
 <pre>
-root@mlc1001:~# traceroute6 -n -q 1 fd66:66:66:0:a2cd:efff:fe10:301
-traceroute to fd66:66:66:0:a2cd:efff:fe10:301 (fd66:66:66:0:a2cd:efff:fe10:301), 30 hops max, 80 byte packets
- 1  fd66:66:66:0:a2cd:efff:fe10:201  0.313 ms
- 2  fd66:66:66:0:a2cd:efff:fe10:301  0.429 ms
+root@mlc1000:~# traceroute6 -n -q1 fd70:92b0:2483:1373:f64e:56b2:d244:be92
+traceroute to fd70:92b0:2483:1373:f64e:56b2:d244:be92 (fd70:92b0:2483:1373:f64e:56b2:d244:be92), 30 hops max, 80 byte packets
+ 1  fd70:c92:d142:b97d:ac33:8990:a84e:e8c5  0.068 ms
+ 2  fd70:45d6:2d24:2b17:28db:392f:1397:2980  0.052 ms
+ 3  fd70:92b0:2483:1373:f64e:56b2:d244:be92  0.149 ms
 </pre>
 
 ### Dynamic Reconfiguration ###
 
-Most bmx6 parameters can be applied not only at startup, but also dynamically to an already running main daemon, using the `--connect` command.
+Most bmx7 parameters can be applied not only at startup, but also dynamically to an already running main daemon, using the `--connect` command.
 For example interfaces can be added, removed, or specified with more details:
 The following example removes interface eth1 and adds eth2 with a max rate of 100 Mbits (overwriting the default assumption of 1000Mbits for ethernet interfaces).
 
 <pre>
-bmx6 -c dev=-eth1 dev=eth2 /rateMax=100000
-bmx6 -cd8
+bmx7 -c dev=-eth1 dev=eth2 /rateMax=100000
+bmx7 -cd8
 </pre>
 
 Checking new status of interfaces, links, and originator:
 
+TODO: This must be adapted to bmx7
 <pre>
 root@mlc1001:~# bmx6 -cd8
 status:
@@ -303,93 +286,69 @@ It can be seen that:
 
 ### Global ID ###
 
-Each bmx6 node creates during its initialization (booting) a global ID for itself.
-This ID is created as a concatenation of the node's hostname and a random value.
-In the above given example with node hostname: "mlc1001" the globalID is: mlc1001.7A7422752001EC4AC4C8
-When the bmx6 daemon restarts the hostname will remain. But the rand part will change.
-As a consequence, the restarted node will appear as a new node to other nodes in the mesh while the old Global ID is still present in their node table.
-Since both node IDs are announcing the same resources (eg the same primary IP), the ID that appears later will be blocked until the state maintained for the first ID expires.
+Each bmx7 node creates during its initialization (first boot) a global ID for itself.
+This ID is based on the public/private key that is also created during first boot (if not already there) and is given by the SHA224 hash of the public key.
 
 ### Descriptions ###
 
-Instead of propagating individual routing updates for each announced network and interface address, each bmx6 daemon summarizes this and other node specific attributes into a single node-specific description. A specific description is propagated only once to all other nodes. Subsequent routing updates are referencing to the corresponding description with it's hash.
+Instead of propagating individual routing updates for each announced network and interface address, each bmx7 daemon summarizes this and other node specific attributes into a single node-specific description. A specific description is propagated only once to all other nodes. Subsequent routing updates are referencing to the corresponding description with it's hash.
 If a node is reconfigured, for example because its interfaces change or a new network shall be announced, than also the node's description changes.
 Other nodes are becoming aware of the changed attributes of a reconfigured node by receiving a corresponding description update.
 Subsequent references to this node will use the hash of the new description.
 
-Because the description is designed very generic it can be easily used to piggyback other non-routing specific data. For example the bmx6-sms plugin is taking advantage of this option by adding arbitrary short messages data to the node's description.
-
-Currently there is a limit for the total size of a description of 1400 bytes. While this is more than sufficient for quite a number of interfaces and announced networks per node, it is critical few when considering a gateway node with BGP route exchange that is announcing 100eds of networks.
+Because the description is designed very generic it can be easily used to piggyback other non-routing specific data. For example the bmx7-sms plugin is taking advantage of this option by adding arbitrary short messages data to the node's description.
 
 ### Blocked Nodes ###
 
 Nodes may be blocked by other nodes.
 When a node is blocked no routing updates (OGMs) of the blocked node are propagated by the blocking node.
 The decision for blocking another node is done locally based on the detection of more than one node announcing the same unique resource.
-This happens if two nodes are declaring themselves as the owner of a unique resource. Then one of those two nodes (usually the latter) is blocked to avoid the propagation of conflicting allocations (and ambiguous forwarding state). Duplicate address usage is the most common reason for such events which happens if two nodes are using (and announcing) the same primary IPs. Another typical scenario causing such case temporary is the rebooting of a node. Once a bmx6 daemon restarts it appears as a new node (with a new random part of it's global ID) to the network but (due to a typically persistant configuration) announcing the same address as the previous process. Since the resources allocated by the previous resources are still in the database of other nodes in the mesh they will block the new process until this information expires (by default after 100 seconds).
 
 
 
 ## Address auto and manual configuration ##
-
-By default bmx6 autoconfigures all configred interface by combining a default prefix (fd66:66:66::/64) with
-the EUI64 suffix (the suffix creation is currently reconsidered and may change soon).
-The same first 56 bits but extended with 0xff00 are also used to create tunnel interfaces.
-
-There are different options to controll the auto configuration.
-  1. A different auto-configuration prefix can be used using the <pre> --ipAutoPrefix </pre>
-   option given with a /56 prefix.
-
-  2. Auto configuratin can be disabled using the <pre> --globalPrefix </pre> option.
-   Then bmx6 checks if an ip in this range is alredy configured on the interfaces and uses it.
-   If no IP is configured in the given range then the inteface will NOT be used.
-
-
-
+TODO: This must be adapted to bmx7
 
 
 
 ## Unicast Host Network Announcements (UHNA) ###
 
 A Host Network Announcements (HNA) describes the advertisement of IP addresses and networks by a node to other nodes in the mesh.
-Typically (but not with BMX6), several nodes can announce the same or overlapping HNAs at the same time.
+Typically (but not with BMX7), several nodes can announce the same or overlapping HNAs at the same time.
 Announced networks do overlap if they are equal or one being a subset of another (eg. 10.1.1.0/24 is a subset and overlapped by 10.1.0.0/16).
 Packets with a destination address matching an announced networks will be routed toward any node that originated a corresponding HNA.
 Therefore these HNA types may also be called anycast HNA.
 
-In bmx6, HNAs have an unicast nature (UHNAs) because each network can only be announced once and announced networks MUST NOT overlap (See also Wiki).
+In bmx7, HNAs have an unicast nature (UHNAs) because each network can only be announced once and announced networks MUST NOT overlap (See also Wiki).
 This way it can be ensured that the destination of an UHNA routed packet is exactly known.
 
 In a sense the origination and propagation (by intermediate nodes) of UHNA announcements can be thought of a promise that guarantees:
   1. All packets with a destination address matching an announced UHNA network will be routed exactly to the node (with the global ID) that originated the UHNA and
   2. each node on the forwarding path towards the originator of the UHNA is supporting this promise.
 
-By default, Bmx6 only announces primary and non-primary interface addresses via UHNAs.
+By default, Bmx7 only announces primary addresses via UHNAs.
 The auto address configuration ensures that interface addresses are unique.
 
 Using UHNAs for the announcements of networks requires a strict coordination to ensure that no network is announced twice.
 
 Technically, multiple UHNAs, each wrapped into a single message, are aggregated into a UHNA frame and attached to the description of a node.
 
-If Bmx6 is configured in IPv6 mode only IPv6 UHNAs can be announced and in IPv4 mode only IPv4 UHNAs
-UHNA Configuration
-
 The announcement of UHNAs can be configured with the `--unicastHna` or `-u` parameter followed by a network specification in ip/prefixlen notation.
 By default all interface addresses are announced via UHNAs. However, this can be disabled by setting the `--dev` subparameter `/announce` or `/a` to 0.
 
-The following example reconfigures an already running bmx6 daemon (in IPv6 mode) to UHNA announce the network fd00:ffff:ffff:ffff::/64 and fd01:ffff:ffff::/48.
-By omitting the `--connect / -c` parameter, the same could be configured as startup parameter for bmx6.
+The following example reconfigures an already running bmx7 daemon (in IPv6 mode) to UHNA announce the network fd00:ffff:ffff:ffff::/64 and fd01:ffff:ffff::/48.
+By omitting the `--connect / -c` parameter, the same could be configured as startup parameter for bmx7.
 
 <pre>
-bmx6 -c u=fd00:ffff:ffff:ffff::/64 u=fd01:ffff:ffff::/48
+bmx7 -c u=fd00:ffff:ffff:ffff::/64 u=fd01:ffff:ffff::/48
 </pre>
 
 An already active announcement can be removed by preceeding the network with the `-` char:
 <pre>
-bmx6 -c u=-fd00:ffff:ffff:ffff::/64
+bmx7 -c u=-fd00:ffff:ffff:ffff::/64
 </pre>
 
-Before bmx6 accepts a dynamically configured UHNA announcement it checks if this UHNA is not overlapping with an already existing UHNA announcement form another node.
+Before bmx7 accepts a dynamically configured UHNA announcement it checks if this UHNA is not overlapping with an already existing UHNA announcement form another node.
 If this is the case the configuration will fail.
 To check if a chain of dynamic commands would be accepted by a bmx6 daemon without actually applying it, the `--test` command may follow the `--connect` command.
 
@@ -399,6 +358,7 @@ To check if a chain of dynamic commands would be accepted by a bmx6 daemon witho
 
 
 ## Tunnel Announcements ##
+TODO: This must be adapted to bmx7
 
 Tunnel announcements offer an alternative mechanism to propagate routes.
 Tunnel announcements are currently only implemented for Bmx6-IPv6 mode.
@@ -549,11 +509,11 @@ bmx6 -c tunIn=def4Offer /n=0.0.0.0/0 /b=32000000  tunIn=local4 /n=10.10.0.0/16 /
 
 Tunnel status information can be accessed with the `--tunnels or --show=tunnels` parameters.
 
-## Bmx6 Plugins ##
+## Bmx7 Plugins ##
 
 ### Compile and Install ###
 
-To compile and install bmx6 daemon and all bmx6 plugins simply do:
+To compile and install bmx7 daemon and all its plugins simply do:
 <pre>
 make build_all
 sudo make install_all
@@ -566,7 +526,7 @@ These requirements are described in the corresponding plugin section.
 
 #### Requirements ####
 
-uci libs are needed for the bmx6-config plugin.
+uci libs are needed for the bmx7-config plugin.
 To install try (old version):
 <pre>
 wget http://downloads.openwrt.org/sources/uci-0.7.5.tar.gz
@@ -583,8 +543,8 @@ Then edit cli.c and change line 465 to: char *argv[MAX_ARGS+2];
 
 #### Compile and Install ####
 <pre>
-make -C lib/bmx6_uci_config/
-sudo make -C lib/bmx6_uci_config/ install
+make -C lib/bmx7_uci_config/
+sudo make -C lib/bmx7_uci_config/ install
 </pre>
 
 #### Usage ####
@@ -593,7 +553,7 @@ sudo make -C lib/bmx6_uci_config/ install
 
 #### Requirements ####
 
-json-c for bmx6_json plugin (debian package: libjson0 libjson0-dev)
+json-c for bmx7_json plugin (debian package: libjson0 libjson0-dev)
 
 json-c developer libs are needed!
 For further reading check: http://json.org/ or https://github.com/jehiah/json-c
@@ -612,10 +572,10 @@ cd json-c..
 
 #### Compile and Install ####
 
-To compile and install only the bmx6 json plugins:
+To compile and install only the bmx7 json plugins:
 <pre>
-make -C lib/bmx6_json/
-sudo make -C lib/bmx6_json/ install
+make -C lib/bmx7_json/
+sudo make -C lib/bmx7_json/ install
 </pre>
 
 #### Usage ####
@@ -630,7 +590,7 @@ tation, there exist a maximum size limit of 240 Bytes for each file.
 
 The API of the sms plug-in is very simple. It simply clones the content of one or more files
 given by one node to all other nodes. All other nodes can do the same. Once started, each
-node will have two directories:/var/run/bmx6/sms/rcvdSms and /var/run/bmx6/sms/sendSms. Files
+node will have two directories:/var/run/bmx7/sms/rcvdSms and /var/run/bmx7/sms/sendSms. Files
 put into the sendSms folder will be cloned to all other nodes inside rcvdSms folder.
 QMP is using this feature for several things. The positioning Map information is transmitted
 using it. There is a chat in web interface which uses it too. And in the future we are planning
@@ -643,11 +603,11 @@ For example to dynamically announce (redistribute) routes from another routing p
 
 #### Usage ####
 
-To use the bmx6 table plugin it must be loaded during bmx6 daemon startup with the plugin=bmx6_table.so argument.
-Alternatively a plugin section can be defined in the bmx6 config file like this:
+To use the bmx7 table plugin it must be loaded during bmx7 daemon startup with the plugin=bmx7_table.so argument.
+Alternatively a plugin section can be defined in the bmx7 config file like this:
 <pre>
 config 'plugin'
-        option 'plugin' 'bmx6_table.so'
+        option 'plugin' 'bmx7_table.so'
 </pre>
 
 Once the plugin is successfully loaded, the new parameters for redistributing routes from specific tables are enabled.
@@ -672,7 +632,7 @@ If routes matching these criterias exist, then:
 * They are announced with a bandwidth of 1Mbit
 * Subsequent routes are aggregated down to a minimum prefix length of 24
 <pre>
- bmx6 -c \
+ bmx7 -c \
  redistTable            otherProtocol        \
     /network            192.168.0.0/16       \
     /table              100                  \
@@ -685,160 +645,5 @@ If routes matching these criterias exist, then:
 
 ### Quagga Plugin ###
 
-The bmx6 quagga plugin can be used to exchange routes with a quagga/zebra daemon.
-Both, export and redistribution of routes is supported.
-
-#### Requirements, Compile, and Install ####
-
-### Quagga ###
-
-Quagga version 0.99.21 must be patched for bmx6 support.
-
-The bmx6 directory lib/bmx6_quagga/patches/ contains patches to enable quagga for bmx6 support.
-The following example provides instructions for obtaining, patching, compiling, and installing quagga:
-<pre>
-wget http://download.savannah.gnu.org/releases/quagga/quagga-0.99.21.tar.gz
-tar xzvf quagga-0.99.21.tar.gz
-cd quagga-0.99.21
-patch -p1 < ../bmx6/lib/bmx6_quagga/patches/quagga-0.99.21.tar.diff
-./configure
-make
-sudo make install
-</pre>
-
-For further instructions to obtain, patch, compile, and install quagga please have a look at:
-the file lib/bmx6_quagga/patches/README in the bmx6 sources.
-
-#### Bmx6 ####
-
-To compile and install the bmx6 part of the quagga plugin simply do:
-<pre>
-make -C lib/bmx6_quagga/
-sudo make -C lib/bmx6_quagga/ install
-</pre>
-
-#### Usage ####
-
-To use the bmx6 quagga plugin it must be loaded during bmx6 daemon startup with the plugin=bmx6_quagga.so argument.
-Alternatively a plugin section can be defined in the bmx6 config file like this:
-<pre>
-config 'plugin'
-        option 'plugin' 'bmx6_quagga.so'
-</pre>
-
-Once the plugin is successfully loaded, the bmx6 daemon will try to connect with the zebra process (via the ZAPI socket)
-and new parameters for exchanging routes with quagga/zebra daemon are enabled.
-
-A quick documentation of the quagga-related parameters is available via the --help and --verboseHelp option.
-If the quagga-enabled daemon is already running bmc6 -c verboseHelp /r=1 will print all currently supported parameters.
-Redistributing routes (from quagga/zebra to bmx6)¶
-
-Redistribution of routes is configurable with the `--redistribute` parameter.
-Similar to the `--tunIn` parameter, `--redistribute` must be given with an arbitrary name for referencing to a specific redistribution directive and further sub-criterias.
-
-Further mandatory sub-parameters are /bandwidth and at least one (to-be redistributed route type).
-The following route types exist:
-<pre>
-  /system <VAL>                          def: 0       range: [ 0 , 1 ]
-  /kernel <VAL>                          def: 0       range: [ 0 , 1 ]
-  /connect <VAL>                         def: 0       range: [ 0 , 1 ]
-  /rip <VAL>                             def: 0       range: [ 0 , 1 ]
-  /ripng <VAL>                           def: 0       range: [ 0 , 1 ]
-  /ospf <VAL>                            def: 0       range: [ 0 , 1 ]
-  /ospf6 <VAL>                           def: 0       range: [ 0 , 1 ]
-  /isis <VAL>                            def: 0       range: [ 0 , 1 ]
-  /bgp <VAL>                             def: 0       range: [ 0 , 1 ]
-  /babel <VAL>                           def: 0       range: [ 0 , 1 ]
-  /hsls <VAL>                            def: 0       range: [ 0 , 1 ]
-  /olsr <VAL>                            def: 0       range: [ 0 , 1 ]
-  /batman <VAL>                          def: 0       range: [ 0 , 1 ]
-</pre>
-
-Only quagga/zebra routes types that are explicitly specified will be redistributed to the bmx6 network.
-In addition, one usually wants to filter out networks from being redistributed based on their prefix.
-Therefore the sub parameters /network, /minPrefixLen, and /maxPrefixLen can be used in the same way as for the `--tunOut` parameter.
-
-#### Route Aggregation ####
-
-By default, maximum aggregation of to-be redistributed routes is enabled.
-This means that to-be redistributed neighboring and overlapping networks with the same route type and bandwidth are aggregated if possible.
-The extend of aggregation can be controlled with the /aggregatePrefixLen sub-parameter.
-The given value limits the aggregation to a minimum prefix length.
-The default of 0 defines maximum aggregation whenever possible which may not be wanted.
-
-For example the GW node may be configured to redistribute the following routes:
-<pre>
-    10.254.20.1/32
-    10.254.20.0/24
-    10.254.21.0/24
-    10.254.22.0/24
-    0.0.0.0/0
-</pre>
-
-The following bmx6 configuration would aggregate all 5 routes into a single 0.0.0.0/0 tunnel announcement since 0.0.0.0/0 is overlapping any other more-specific route:
-<pre>
-redistribute=ipv4 /bandwidth=10000000 /kernel=1 /aggregatePrefixLen=0
-</pre>
-
-This aggregation may be too generic since GW-client nodes are usually looking for more specific routes to specific destination.
-The following configuration would aggregate only routes with a prefix-len larger than 16:
-<pre>
-redistribute=ipv4 /bandwidth=10000000 /kernel=1 /aggregatePrefixLen=16
-</pre>
-Resulting in the following aggregations:
-
-* 10.254.20.1/32: Aggregated (sub-network of 10.254.20.0/24)! NOT announced!
-* 10.254.20.0/24: Aggregated with 10.254.21.0/24! Announced as 10.254.20.0/23
-* 10.254.21.0/24: Aggregated with 10.254.20.0/24! Announced as 10.254.20.0/23
-* 10.254.22.0/24: Not aggregatable into larger network! Announced as is!
-* 0.0.0.0/0: Not aggregated (prefix-len smaller than /aggregatePrefixLen=16)! Announced as is!
-
-#### Exporting routes (from bmx6 to quagga/zebra) ####
-
-For exporting routes received as bmx6 tunnel announcements, the /exportDistance can be used as a subparameter of the `--tunOut` parameter.
-The default value of /exportDistance is 256 which is considered as infinit or disabled.
-Any lower configured value will export the corresponding outgoing tunnel (once it becomes active) with the given distance to quagga/zebra.
-
-A GW node usually only wants to export bmx6 routes that were announced by other (non-GW) bmx6 nodes in the mesh.
-
-In the following example there are 3 other bmx6 nodes, each tunnel announcing a private /32 network.
-
-The given parametrization configures a GW node to search, establish related tunnels, and export all tunnel announcements for other bmx6 daemons that have a prefix-length smaller that /27 and fall into the network range of 10.254.0.0/16:
-<pre>
-plugin=bmx6_quagga.so tunOut=privV4Nets /network=10.254.0.0/16 /minPrefixLen=27 /exportDistance=0
-</pre>
-
-Checking the export from the quagga perspective show the following:
-<pre>
-root@mlc1001:~# telnet localhost zebra
-Trying ::1...
-Trying 127.0.0.1...
-Connected to localhost.
-Escape character is '^]'.
-
-Hello, this is Quagga (version 0.99.21).
-Copyright 1996-2005 Kunihiro Ishiguro, et al.
-
-User Access Verification
-Password:
-
-Router> show ip route
-Codes: K - kernel route, C - connected, S - static, R - RIP,
-       O - OSPF, I - IS-IS, B - BGP, H - HSLS, o - OLSR,
-       b - BATMAN, x - BMX6, A - Babel,
-       > - selected route, * - FIB route
-
-K>* 0.0.0.0/0 via 10.0.0.1, eth0
-C>* 10.0.0.0/11 is directly connected, eth0
-x>* 10.254.10.0/32 [0/1024] is directly connected, bmx6_out0000, 00:03:24
-C * 10.254.10.1/32 is directly connected, bmx6_out0003
-C * 10.254.10.1/32 is directly connected, bmx6_out0002
-C * 10.254.10.1/32 is directly connected, bmx6_out0001
-C * 10.254.10.1/32 is directly connected, bmx6_out0000
-C>* 10.254.10.1/32 is directly connected, bmx6_in0000
-x>* 10.254.10.2/32 [0/1024] is directly connected, bmx6_out0001, 00:03:24
-x>* 10.254.10.3/32 [0/1024] is directly connected, bmx6_out0002, 00:03:24
-x>* 10.254.10.4/32 [0/1024] is directly connected, bmx6_out0003, 00:03:24
-C>* 127.0.0.0/8 is directly connected, lo
-</pre>
+The bmx7 quagga plugin is currently broken.
 
