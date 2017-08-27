@@ -624,16 +624,12 @@ sudo make -C lib/bmx6_uci_config/ install
 json-c for bmx6_json plugin (debian package: libjson0 libjson0-dev)
 
 json-c developer libs are needed!
-For further reading check: http://json.org/ or https://github.com/jehiah/json-c
-
-Note for debian sid:
-The debian package libjson0-dev 0.10-1 seems to miss the file /usr/include/json/json_object_iterator.h
-Manually copying it from the below mentioned json-c_0.10.orig.tar.gz archive helps.
+For further reading check: http://json.org/ or https://github.com/json-c/json-c
 
 To install manually (only if NOT installed via debian or other package management system):
 <pre>
-wget http://ftp.de.debian.org/debian/pool/main/j/json-c/json-c_0.10.orig.tar.gz
-tar xzvf json-c_0.10.orig.tar.gz
+wget https://github.com/json-c/json-c/archive/json-c-0.12.1-20160607.tar.gz
+tar xzvf json-c-0.12.1-20160607.tar.gz
 cd json-c..
 ./configure ; make ; make install; ldconfig
 </pre>
