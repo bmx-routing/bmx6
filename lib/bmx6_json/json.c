@@ -536,7 +536,7 @@ void json_description_event_hook(int32_t cb_id, struct orig_node *on)
                         if (tlvs_len) {
 
                                 struct rx_frame_iterator it = {
-                                        .caller = __FUNCTION__, .on = on, .cn = NULL, .op = TLV_OP_PLUGIN_MIN,
+                                        .caller = __func__, .on = on, .cn = NULL, .op = TLV_OP_PLUGIN_MIN,
                                         .handls = description_tlv_handl, .handl_max = BMX_DSC_TLV_MAX,
                                         .process_filter = FRAME_TYPE_PROCESS_ALL,
                                         .data = ((uint8_t*) on->desc), .frame_type = -1,

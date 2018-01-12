@@ -269,7 +269,7 @@ IDM_T process_description_tlvs(struct packet_buff *pb, struct orig_node *on, str
         uint16_t dsc_tlvs_len = ntohs(desc->extensionLen);
 
         struct rx_frame_iterator it = {
-                .caller = __FUNCTION__, .on = on, .cn = cn, .op = op, .pb = pb,
+                .caller = __func__, .on = on, .cn = cn, .op = op, .pb = pb,
                 .handls = description_tlv_handl, .handl_max = (BMX_DSC_TLV_MAX), .process_filter = filter,
                 .data = ((uint8_t*) desc), .frame_type = -1,
                 .frames_in = (((uint8_t*) desc) + sizeof (struct description)), .frames_pos = 0,
@@ -2799,7 +2799,7 @@ IDM_T rx_frames(struct packet_buff *pb)
         int32_t it_result;
 
         struct rx_frame_iterator it = {
-                .caller = __FUNCTION__, .on = NULL, .cn = NULL, .op = 0, .pb = pb,
+                .caller = __func__, .on = NULL, .cn = NULL, .op = 0, .pb = pb,
                 .handls = packet_frame_handler, .handl_max = FRAME_TYPE_MAX, .process_filter = FRAME_TYPE_PROCESS_ALL,
                 .data = ((uint8_t*) & pb->packet.header), .frame_type = -1,
                 .frames_in = (((uint8_t*) & pb->packet.header) + sizeof (struct packet_header)),
@@ -3117,7 +3117,7 @@ void tx_packet(void *devp)
         memset(&pb.i, 0, sizeof (pb.i));
 
         struct tx_frame_iterator it = {
-                .caller = __FUNCTION__, .handls = packet_frame_handler, .handl_max = FRAME_TYPE_MAX,
+                .caller = __func__, .handls = packet_frame_handler, .handl_max = FRAME_TYPE_MAX,
                 .frames_out_ptr = (pb.packet.data + sizeof (struct packet_header)), .frames_out_pos = 0, .frames_out_num = 0,
                 .frames_out_max = (MAX_UDPD_SIZE - sizeof (struct packet_header)),
                 .frames_out_pref = (pref_udpd_size - sizeof (struct packet_header)),
@@ -3548,7 +3548,7 @@ void update_my_description_adv(void)
         // add all tlv options:
         
         struct tx_frame_iterator it = {
-                .caller = __FUNCTION__, .frames_out_ptr = (((uint8_t*) dsc) + sizeof (struct description)),
+                .caller = __func__, .frames_out_ptr = (((uint8_t*) dsc) + sizeof (struct description)),
                 .handls = description_tlv_handl, .handl_max = FRAME_TYPE_MAX, .frames_out_pos = 0, .frames_out_num = 0,
                 .frames_out_max = MAX_UDPD_SIZE - (sizeof (struct packet_header) + sizeof (struct frame_header_long) + sizeof (struct msg_description_adv)),
                 .frames_out_pref = MAX_UDPD_SIZE - (sizeof (struct packet_header) + sizeof (struct frame_header_long) + sizeof (struct msg_description_adv)),
@@ -3655,7 +3655,7 @@ int32_t opt_show_descriptions(uint8_t cmd, uint8_t _save, struct opt_type *opt,
                         debugFree(desc_buff, -300362);
 
                         struct rx_frame_iterator it = {
-                                .caller = __FUNCTION__, .on = on, .cn = cn, .op = TLV_OP_PLUGIN_MIN,
+                                .caller = __func__, .on = on, .cn = cn, .op = TLV_OP_PLUGIN_MIN,
                                 .handls = description_tlv_handl, .handl_max = BMX_DSC_TLV_MAX, .process_filter = type_filter,
                                 .data = ((uint8_t*) on->desc), .frame_type = -1,
                                 .frames_in = (((uint8_t*) on->desc) + sizeof (struct description)), .frames_length = tlvs_len

@@ -545,7 +545,7 @@ void _reconfigure_metric_record_position(const char *f, struct metric_record *re
 }
 
 #define reconfigure_metric_record_position(rec, alg, min, in, sqn_bit_size, reset) \
-  _reconfigure_metric_record_position(__FUNCTION__, rec, alg, min, in, sqn_bit_size, reset)
+  _reconfigure_metric_record_position(__func__, rec, alg, min, in, sqn_bit_size, reset)
 
 STATIC_FUNC
 IDM_T update_metric_record(struct orig_node *on, struct router_node *rt, SQN_T in, const UMETRIC_T *probe)

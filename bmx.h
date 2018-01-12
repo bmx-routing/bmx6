@@ -1186,7 +1186,7 @@ void rx_packet( struct packet_buff *pb );
 
 void trace_function_call(const char *);
 
-#define TRACE_FUNCTION_CALL trace_function_call ( __FUNCTION__ )
+#define TRACE_FUNCTION_CALL trace_function_call ( __func__ )
 
 
 #else

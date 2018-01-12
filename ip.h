@@ -272,9 +272,9 @@ extern struct net_key __ZERO_NETCFG_KEY;
 #define ZERO_NETCFG_KEY __ZERO_NETCFG_KEY
 #else
 uint8_t _af_cfg(const char *func);
-#define AF_CFG _af_cfg(__FUNCTION__)
+#define AF_CFG _af_cfg(__func__)
 struct net_key _ZERO_NETCFG_KEY(const char *func);
-#define ZERO_NETCFG_KEY _ZERO_NETCFG_KEY(__FUNCTION__)
+#define ZERO_NETCFG_KEY _ZERO_NETCFG_KEY(__func__)
 #endif
 
 extern const IP6_T   IP6_ALLROUTERS_MC_ADDR;
