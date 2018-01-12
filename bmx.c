@@ -1784,7 +1784,7 @@ struct bmx_status {
         struct net_key *tun4Address;
         LOCAL_ID_T myLocalId;
         char *uptime;
-        char cpu[6];
+        char cpu[32];
         uint16_t nodes;
 };
 
