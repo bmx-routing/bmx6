@@ -83,6 +83,7 @@ IDM_T (*hna_configure_niit6to4) (IDM_T del, struct net_key *key) = NULL;
 
 IFNAME_T tun_name_prefix = {{DEF_TUN_NAME_PREFIX}};
 
+static int32_t tun_out_delay = DEF_TUN_OUT_DELAY;
 static int32_t tun_out_mtu = DEF_TUN_OUT_MTU;
 static int32_t tun_dedicated_to = DEF_TUN_OUT_TO;
 
@@ -894,6 +895,9 @@ void tun_out_catchAll_hook(int fd)
 					struct tun_dev_node *tdn = avl_next_item(&tun_catch_tree, &key);
 
 					if (tdn && tdn->tunCatchKey.afKey == af) {
+
+						if (tun_out_delay)
+							wait_sec_usec(0, tun_out_delay); //delay reschedule to complete proper tunnel-setup (e.g. local address, mtu, ...)
 
 						int written = write( tdn->tunCatch_fd, &tp, tp_len );
 
@@ -3316,6 +3320,8 @@ struct opt_type hna_options[]= {
 	{ODI,0,ARG_TUN_OUT_MTU,         0,  9,2,A_PS1,A_ADM,A_DYI,A_CFA,A_ANY,	0,              MIN_TUN_OUT_MTU,MAX_TUN_OUT_MTU,DEF_TUN_OUT_MTU,0, opt_tun_out_mtu,
 			ARG_VALUE_FORM, "MTU of outgoing tunnels"},
 
+	{ODI,0,ARG_TUN_OUT_DELAY,       0,  9,2,A_PS1,A_ADM,A_DYI,A_CFA,A_ANY,	&tun_out_delay, MIN_TUN_OUT_DELAY,MAX_TUN_OUT_DELAY,DEF_TUN_OUT_DELAY,0, 0,
+			ARG_VALUE_FORM, "Delay catched tunnel packets for given us before rescheduling (avoid dmesg warning ip6_tunnel: X7Out_.. xmit: Local address not yet configured!)"},
 
 
 

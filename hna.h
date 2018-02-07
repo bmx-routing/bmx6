@@ -173,6 +173,12 @@ extern struct avl_tree tun_in_tree;
 #define MIN_TUN_OUT_MTU 1280
 #define MAX_TUN_OUT_MTU 65535
 
+#define ARG_TUN_OUT_DELAY "tunCatchDelay"
+#define DEF_TUN_OUT_DELAY 100
+#define MIN_TUN_OUT_DELAY 0
+#define MAX_TUN_OUT_DELAY 1000000
+
+
 #define ARG_EXPORT_DISTANCE "exportDistance"
 #define TYP_EXPORT_DISTANCE_INFINITE 256
 #define MIN_EXPORT_DISTANCE 0
