@@ -329,9 +329,9 @@ IDM_T configure_tunnel_in(uint8_t del, struct tun_in_node *tin, int16_t tun6Id)
         } else if (!del && !tin->upIfIdx) {
 
                 IPX_T *local = &self->primary_ip;
-                IPX_T remoteIp = tun6Id ? tin->remote : ZERO_IP;
+                IPX_T *remote = &tin->remote;
 
-                if (!is_ip_set(&tin->remote) ||  is_ip_local(&tin->remote) ||
+                if (!is_ip_set(remote) ||  is_ip_local(remote) ||
                         (tin->ingressPrefix46[0].mask && find_overlapping_hna(&tin->ingressPrefix46[0].ip, tin->ingressPrefix46[0].mask, self))) {
 
                         dbgf_sys(DBGT_WARN, "FAILED creating tun remoteIp=%s", ip6AsStr(&tin->remote));
@@ -340,7 +340,7 @@ IDM_T configure_tunnel_in(uint8_t del, struct tun_in_node *tin, int16_t tun6Id)
 
                 assertion(-501312, (strlen(tin->nameKey.str)));
 
-                if ((tin->upIfIdx = kernel_tun_add(tin->nameKey.str, IPPROTO_IP, local, &remoteIp)) > 0) {
+                if ((tin->upIfIdx = kernel_tun_add(tin->nameKey.str, IPPROTO_IP, local, remote)) > 0) {
 
 			tin->tun6Id = tun6Id;
 
@@ -1199,9 +1199,9 @@ struct tun_dev_node *tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
 				memset(tdn, 0, sizeof(struct tun_dev_node));
 				AVL_INIT_TREE(tdn->tun_bit_tree[0], struct tun_bit_node, tunBitKey.keyNodes);
 				AVL_INIT_TREE(tdn->tun_bit_tree[1], struct tun_bit_node, tunBitKey.keyNodes);
-				IPX_T localIp = ton->tunOutKey.tun6Id ? ton->localIp : self->primary_ip;
+
 				tdn->nameKey  = tun_out_get_free_name(DEF_TUN_NAME_TYPE_OUT,ton->tunOutKey.on->global_id.name);
-				tdn->ifIdx = kernel_tun_add(tdn->nameKey.str, IPPROTO_IP, &localIp, &ton->remoteIp);
+				tdn->ifIdx = kernel_tun_add(tdn->nameKey.str, IPPROTO_IP, &ton->localIp, &ton->remoteIp);
 				tdn->orig_mtu = kernel_get_mtu(tdn->nameKey.str);
 				tdn->curr_mtu = set_tun_out_mtu( tdn->nameKey.str, tdn->orig_mtu, DEF_TUN_OUT_MTU, tun_out_mtu);
 
@@ -1211,7 +1211,7 @@ struct tun_dev_node *tun_dev_out_add(struct tun_bit_node *tbn, IDM_T tdn_state)
 				assertion(-501486, (tdn->orig_mtu >= MIN_TUN_OUT_MTU));
 				assertion(-501487, (!tdn->tunCatch_fd));
 
-				kernel_set_addr(ADD, tdn->ifIdx, AF_INET6, &localIp, 128, YES /*deprecated*/);
+				kernel_set_addr(ADD, tdn->ifIdx, AF_INET6, &ton->localIp, 128, YES /*deprecated*/);
 
 				if (tin->tunAddr46[1].mask)
 					kernel_set_addr(ADD, tdn->ifIdx, AF_INET, &tin->tunAddr46[1].ip, 32, NO/*deprecated*/);
