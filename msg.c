@@ -2654,7 +2654,7 @@ int32_t rx_frame_iterate(struct rx_frame_iterator *it)
 
                 if (f_type > it->handl_max || !(it->handls[f_type].rx_frame_handler || it->handls[f_type].rx_msg_handler)) {
 
-                        dbgf_sys(DBGT_WARN, "%s - unknown type=%d ! check for updates", it->caller, f_type);
+                        dbgf_mute(50, DBGL_SYS, DBGT_WARN, "%s - unknown type=%d ! check for updates or plugins", it->caller, f_type);
 
                         if (f_type > it->handl_max || fhs->is_relevant)
                                 return TLV_RX_DATA_FAILURE;
