@@ -116,7 +116,7 @@ AVL_TREE(status_tree, struct status_handl, status_name);
 void blacklist_neighbor(struct packet_buff *pb)
 {
         TRACE_FUNCTION_CALL;
-        dbgf_sys(DBGT_ERR, "%s via %s", pb->i.llip_str, pb->i.iif->label_cfg.str);
+        dbgf_sys(DBGT_ERR, "%s via %s", pb->i.llip_str, pb->i.iif->ifname_label.str);
 
         EXITERROR(-500697, (0));
 }
@@ -469,7 +469,7 @@ void purge_orig_router(struct orig_node *only_orig, struct link_dev_node *only_l
                         dbgf_track(DBGT_INFO, "only_orig=%s only_lndev=%s,%s only_useless=%d purging metric=%ju router=%X (%s)",
                                 only_orig ? globalIdAsString(&only_orig->global_id) : DBG_NIL,
                                 only_lndev ? ipFAsStr(&only_lndev->key.link->link_ip):DBG_NIL,
-                                only_lndev ? only_lndev->key.dev->label_cfg.str : DBG_NIL,
+                                only_lndev ? only_lndev->key.dev->ifname_label.str : DBG_NIL,
                                 only_useless,rt->mr.umetric,
                                 ntohl(rt->local_key->local_id),
                                 rt->local_key && rt->local_key->neigh ? globalIdAsString(&rt->local_key->neigh->dhn->on->global_id) : "???");
@@ -513,7 +513,7 @@ void purge_link_node(struct link_node_key *only_link_key, struct dev_node *only_
 
         dbgf_all( DBGT_INFO, "only_link_key=%X,%d only_dev=%s only_expired=%d",
                 only_link_key ? ntohl(only_link_key->local_id) : 0, only_link_key ? only_link_key->dev_idx : -1,
-                only_dev ? only_dev->label_cfg.str : DBG_NIL, only_expired);
+                only_dev ? only_dev->ifname_label.str : DBG_NIL, only_expired);
 
         while ((link = (only_link_key ? avl_find_item(&link_tree, only_link_key) : avl_next_item(&link_tree, &link_key_it)))) {
 
@@ -535,7 +535,7 @@ void purge_link_node(struct link_node_key *only_link_key, struct dev_node *only_
                                 (!only_expired || (((TIME_T) (bmx_time - lndev->pkt_time_max)) > (TIME_T) link_purge_to))) {
 
                                 dbgf_track(DBGT_INFO, "purging lndev link=%s dev=%s",
-                                        ipFAsStr( &link->link_ip), lndev->key.dev->label_cfg.str);
+                                        ipFAsStr( &link->link_ip), lndev->key.dev->ifname_label.str);
 
                                 purge_orig_router(NULL, lndev, NO);
 
@@ -569,7 +569,7 @@ void purge_link_node(struct link_node_key *only_link_key, struct dev_node *only_
 
                         dbgf_track(DBGT_INFO, "purging: link local_id=%X link_ip=%s dev_idx=%d only_dev=%s",
                                 ntohl(link->key.local_id), ipFAsStr( &link->link_ip),
-                                 link->key.dev_idx, only_dev ? only_dev->label_cfg.str : "???");
+                                 link->key.dev_idx, only_dev ? only_dev->ifname_label.str : "???");
 
                         struct avl_node *dev_avl;
                         struct dev_node *dev;
@@ -706,7 +706,7 @@ void purge_link_route_orig_nodes(struct dev_node *only_dev, IDM_T only_expired)
         TRACE_FUNCTION_CALL;
 
         dbgf_all( DBGT_INFO, "%s %s only expired",
-                only_dev ? only_dev->label_cfg.str : DBG_NIL, only_expired ? " " : "NOT");
+                only_dev ? only_dev->ifname_label.str : DBG_NIL, only_expired ? " " : "NOT");
 
         purge_link_node(NULL, only_dev, only_expired);
 
@@ -805,7 +805,7 @@ struct link_node *get_link_node(struct packet_buff *pb)
                         if (((TIME_T) (bmx_time - local->packet_time) < (TIME_T) PKT_SQN_DAD_RANGE * my_tx_interval)) {
 
                                 dbgf_sys(DBGT_WARN, "DAD-Alert NB=%s local_id=%X dev=%s pkt_sqn=%d pkt_sqn_max=%d dad_range=%d dad_to=%d",
-                                        pb->i.llip_str, ntohl(pb->i.link_key.local_id), pb->i.iif->label_cfg.str, pb->i.pkt_sqn, local->packet_sqn,
+                                        pb->i.llip_str, ntohl(pb->i.link_key.local_id), pb->i.iif->ifname_label.str, pb->i.pkt_sqn, local->packet_sqn,
                                         PKT_SQN_DAD_RANGE, PKT_SQN_DAD_RANGE * my_tx_interval);
 
                                 schedule_tx_task(&pb->i.iif->dummy_lndev, FRAME_TYPE_PROBLEM_ADV, sizeof (struct msg_problem_adv),
@@ -825,7 +825,7 @@ struct link_node *get_link_node(struct packet_buff *pb)
                 if ((((LINKADV_SQN_T) (pb->i.link_sqn - local->packet_link_sqn_ref)) > LINKADV_SQN_DAD_RANGE)) {
 
                         dbgf_sys(DBGT_ERR, "DAD-Alert NB=%s local_id=%X dev=%s link_sqn=%d link_sqn_max=%d dad_range=%d dad_to=%d",
-                                pb->i.llip_str, ntohl(pb->i.link_key.local_id), pb->i.iif->label_cfg.str, pb->i.link_sqn, local->packet_link_sqn_ref,
+                                pb->i.llip_str, ntohl(pb->i.link_key.local_id), pb->i.iif->ifname_label.str, pb->i.link_sqn, local->packet_link_sqn_ref,
                                 LINKADV_SQN_DAD_RANGE, LINKADV_SQN_DAD_RANGE * my_tx_interval);
 
                         purge_local_node(local);
@@ -852,7 +852,7 @@ struct link_node *get_link_node(struct packet_buff *pb)
                                 dbgf_sys(DBGT_WARN,
                                         "DAD-Alert (local_id collision, this can happen)! NB=%s via dev=%s"
                                         "cached llIP=%s local_id=%X dev_idx=0x%X ! sending problem adv...",
-                                        pb->i.llip_str, pb->i.iif->label_cfg.str, ipFAsStr( &link->link_ip),
+                                        pb->i.llip_str, pb->i.iif->ifname_label.str, ipFAsStr( &link->link_ip),
                                         ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx);
 
                                 // be carefull here. Errornous PROBLEM_ADVs cause neighboring nodes to cease!!!
@@ -869,7 +869,7 @@ struct link_node *get_link_node(struct packet_buff *pb)
 
                         dbgf_sys(DBGT_WARN, "Reinitialized! NB=%s via dev=%s "
                                 "cached llIP=%s local_id=%X dev_idx=0x%X ! Reinitializing link_node...",
-                                pb->i.llip_str, pb->i.iif->label_cfg.str, ipFAsStr( &link->link_ip),
+                                pb->i.llip_str, pb->i.iif->ifname_label.str, ipFAsStr( &link->link_ip),
                                 ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx);
 
                         purge_link_node(&link->key, NULL, NO);
@@ -958,7 +958,7 @@ struct link_dev_node *get_link_dev_node(struct packet_buff *pb)
                 }
 
 
-                dbgf_track(DBGT_INFO, "creating new lndev %16s %s", ipFAsStr(&link->link_ip), dev->name_phy_cfg.str);
+                dbgf_track(DBGT_INFO, "creating new lndev %16s %s", ipFAsStr(&link->link_ip), dev->ifname_device.str);
 
                 list_add_tail(&link->lndev_list, &lndev->list);
 
@@ -1014,7 +1014,7 @@ void rx_packet( struct packet_buff *pb )
 
         ipFToStr(&pb->i.llip, pb->i.llip_str);
 
-        dbgf_all(DBGT_INFO, "via %s %s %s size %d", iif->label_cfg.str, iif->ip_llocal_str, pb->i.llip_str, pkt_length);
+        dbgf_all(DBGT_INFO, "via %s %s %s size %d", iif->ifname_label.str, iif->ip_llocal_str, pb->i.llip_str, pkt_length);
 
 	// immediately drop invalid packets...
 	// we acceppt longer packets than specified by pos->size to allow padding for equal packet sizes
@@ -1045,7 +1045,7 @@ void rx_packet( struct packet_buff *pb )
                         dbgf_mute(60, DBGL_SYS, DBGT_ERR, "DAD-Alert (duplicate Address) from NB=%s via dev=%s  "
 				"iifIdx=0X%X aifIdx=0X%X rcvdIdx=0x%X  myLocalId=%X rcvdLocalId=%X  myIID4me=%d rcvdIID=%d "
 				"oif=%d aif=%d dipt=%d time=%d mlidts=%d txintv=%d mi4mts=%d",
-                                pb->i.llip_str, iif->label_cfg.str, 
+                                pb->i.llip_str, iif->ifname_label.str, 
 				iif->llip_key.idx, anyIf->llip_key.idx, pb->i.link_key.dev_idx,
                                 ntohl(my_local_id), ntohl(pb->i.link_key.local_id),
                                 myIID4me, pb->i.transmittersIID, outIf?1:0, anyIf?1:0, dev_ip_tree.items,
@@ -1058,7 +1058,7 @@ void rx_packet( struct packet_buff *pb )
 			//ASSERTION(-500840, (oif == iif)); // so far, only unique own interface IPs are allowed!!
                         dbgf_mute(60, DBGL_SYS, DBGT_ERR, "Link-Alert! Rcvd my own packet on different dev=%s idx=0x%X than send dev=%s idx=0x%X "
 				"with same link-local ip=%s my_local_id=%X ! Separate links or fix link-local IPs!!!",
-                                iif->label_cfg.str, iif->llip_key.idx, outIf->label_cfg.str, outIf->llip_key.idx,
+                                iif->ifname_label.str, iif->llip_key.idx, outIf->ifname_label.str, outIf->llip_key.idx,
 				iif->ip_llocal_str, ntohl(my_local_id));
 		}
 
@@ -1073,7 +1073,7 @@ void rx_packet( struct packet_buff *pb )
 
                 dbgf_sys(DBGT_WARN, "DAD-Alert (duplicate link ID, this can happen) via dev=%s NB=%s "
                         "is using my local_id=%X dev_idx=0x%X!  Choosing new local_id=%X dev_idx=0x%X for myself, dropping packet",
-                        iif->label_cfg.str, pb->i.llip_str, ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx, ntohl(my_local_id), iif->llip_key.idx);
+                        iif->ifname_label.str, pb->i.llip_str, ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx, ntohl(my_local_id), iif->llip_key.idx);
 
                 return;
         }
@@ -1085,7 +1085,7 @@ void rx_packet( struct packet_buff *pb )
 
         dbgf_all(DBGT_INFO, "version=%i, reserved=%X, size=%i IID=%d rcvd udp_len=%d via NB %s %s %s",
                 hdr->bmx_version, hdr->reserved, pkt_length, pb->i.transmittersIID,
-                pb->i.total_length, pb->i.llip_str, iif->label_cfg.str, pb->i.unicast ? "UNICAST" : "BRC");
+                pb->i.total_length, pb->i.llip_str, iif->ifname_label.str, pb->i.unicast ? "UNICAST" : "BRC");
 
 
         cb_packet_hooks(pb);
@@ -1105,7 +1105,7 @@ process_packet_error:
         dbgf_sys(DBGT_WARN,
                 "Drop (remaining) packet: rcvd problematic packet via NB=%s dev=%s "
                 "(version=%i, local_id=%X dev_idx=0x%X, reserved=0x%X, pkt_size=%i), udp_len=%d my_version=%d, max_udpd_size=%d",
-                pb->i.llip_str, iif->label_cfg.str, hdr->bmx_version,
+                pb->i.llip_str, iif->ifname_label.str, hdr->bmx_version,
                 ntohl(pb->i.link_key.local_id), pb->i.link_key.dev_idx, hdr->reserved, pkt_length, pb->i.total_length,
                 COMPATIBILITY_VERSION, MAX_UDPD_SIZE);
 
@@ -1908,7 +1908,7 @@ static int32_t link_status_creator(struct status_handl *handl, void *data)
                                 status[i].name = on->global_id.name;
                                 status[i].globalId = &on->global_id;
                                 status[i].llocalIp = link->link_ip;
-                                status[i].viaDev = lndev->key.dev->label_cfg;
+                                status[i].viaDev = lndev->key.dev->ifname_label;
                                 status[i].rxRate = ((lndev->timeaware_rx_probe * 100) / UMETRIC_MAX);
                                 status[i].bestRxLink = (lndev == local->best_rp_lndev);
                                 status[i].txRate = ((lndev->timeaware_tx_probe * 100) / UMETRIC_MAX);
@@ -1994,7 +1994,7 @@ static int32_t orig_status_creator(struct status_handl *handl, void *data)
                 status[i].primaryIp = on->primary_ip;
                 status[i].routes = on->rt_tree.items;
                 status[i].viaIp = (on->curr_rt_lndev ? on->curr_rt_lndev->key.link->link_ip : ZERO_IP);
-                status[i].viaDev = on->curr_rt_lndev && on->curr_rt_lndev->key.dev ? on->curr_rt_lndev->key.dev->name_phy_cfg.str : DBG_NIL;
+                status[i].viaDev = on->curr_rt_lndev && on->curr_rt_lndev->key.dev ? on->curr_rt_lndev->key.dev->ifname_device.str : DBG_NIL;
                 status[i].metric = (on->curr_rt_local ? (on->curr_rt_local->mr.umetric) : (on == self ? UMETRIC_MAX : 0));
                 status[i].myIid4x = on->dhn->myIID4orig;
                 status[i].descSqn = on->descSqn;

@@ -343,7 +343,7 @@ void purge_tx_task_list(struct list_head *tx_task_lists, struct link_node *only_
                                 dbgf_all(DBGT_INFO, "removed frame_type=%d ln=%s dev=%s tx_tasks_list.items=%d",
                                         tx_task->task.type,
                                         ipFAsStr(tx_task->task.link ? &tx_task->task.link->link_ip : &ZERO_IP),
-                                        tx_task->task.dev->label_cfg.str, tx_task_lists[tx_task->task.type].items);
+                                        tx_task->task.dev->ifname_label.str, tx_task_lists[tx_task->task.type].items);
 
                                 debugFree(tx_task, -300066);
 
@@ -417,7 +417,7 @@ IDM_T tx_task_obsolete(struct tx_task_node *tx_task)
         dbgf_track(DBGT_INFO,
                 "%s type=%s dev=%s myIId4x=%d neighIID4x=%d local_id=%X dev_idx=0x%X name=%s or send just %d ms ago",
                 reason,
-                packet_frame_handler[tx_task->task.type].name, tx_task->task.dev->name_phy_cfg.str,
+                packet_frame_handler[tx_task->task.type].name, tx_task->task.dev->ifname_device.str,
                 tx_task->task.myIID4x, tx_task->task.neighIID4x,
                 tx_task->task.link ? ntohl(tx_task->task.link->key.local_id) : 0,
                 tx_task->task.link ? tx_task->task.link->key.dev_idx : 0,
@@ -467,7 +467,7 @@ struct tx_task_node *tx_task_new(struct link_dev_node *dest_lndev, struct tx_tas
                 if (test->task.dev->tx_task_interval_tree.items > DEF_TX_TS_TREE_SIZE) {
                         dbg_mute(20, DBGL_SYS, DBGT_WARN,
                                 "%s tx_ts_tree reached %d %s neighIID4x=%d u16=%d u32=%d myIID4x=%d",
-                                test->task.dev->name_phy_cfg.str, test->task.dev->tx_task_interval_tree.items,
+                                test->task.dev->ifname_device.str, test->task.dev->tx_task_interval_tree.items,
                                 handl->name, test->task.neighIID4x, test->task.u16, test->task.u32,
                                 test->task.myIID4x);
                 }
@@ -484,7 +484,7 @@ struct tx_task_node *tx_task_new(struct link_dev_node *dest_lndev, struct tx_tas
                 dbgf_track(DBGT_INFO, "added %s to lndev local_id=%X link_ip=%s dev=%s tx_tasks_list.items=%d",
                         handl->name, ntohl(dest_lndev->key.link->key.local_id),
                         ipFAsStr(&dest_lndev->key.link->link_ip),
-                        dest_lndev->key.dev->label_cfg.str, dest_lndev->tx_task_lists[test->task.type].items);
+                        dest_lndev->key.dev->ifname_label.str, dest_lndev->tx_task_lists[test->task.type].items);
 
         } else {
 
@@ -534,12 +534,12 @@ void schedule_tx_task(struct link_dev_node *dest_lndev, uint16_t frame_type, int
                 handl->name,
                 dest_lndev->key.link ? ipFAsStr(&dest_lndev->key.link->link_ip) : DBG_NIL,
                 dest_lndev->key.link ? dest_lndev->key.link->local->local_id : 0,
-                dest_lndev->key.dev->label_cfg.str, frame_msgs_len, u16, u32, myIID4x, neighIID4x);
+                dest_lndev->key.dev->ifname_label.str, frame_msgs_len, u16, u32, myIID4x, neighIID4x);
 
         if (handl->tx_tp_min && *(handl->tx_tp_min) > dest_lndev->timeaware_tx_probe) {
 
                 dbgf_track(DBGT_INFO, "NOT sending %s (via %s sqn %d myIID4x %d neighIID4x %d) tp=%ju < %ju",
-                        handl->name, dest_lndev->key.dev->label_cfg.str, u16, myIID4x, neighIID4x,
+                        handl->name, dest_lndev->key.dev->ifname_label.str, u16, myIID4x, neighIID4x,
                         dest_lndev->timeaware_tx_probe, *(handl->tx_tp_min));
                 return;
         }
@@ -547,7 +547,7 @@ void schedule_tx_task(struct link_dev_node *dest_lndev, uint16_t frame_type, int
         if (handl->tx_rp_min && *(handl->tx_rp_min) > dest_lndev->timeaware_rx_probe) {
 
                 dbgf_track(DBGT_INFO, "NOT sending %s (via %s sqn %d myIID4x %d neighIID4x %d) rp=%ju < %ju",
-                        handl->name, dest_lndev->key.dev->label_cfg.str, u16, myIID4x, neighIID4x,
+                        handl->name, dest_lndev->key.dev->ifname_label.str, u16, myIID4x, neighIID4x,
                         dest_lndev->timeaware_rx_probe, *(handl->tx_rp_min));
                 return;
         }
@@ -828,7 +828,7 @@ struct link_dev_node **lndevs_get_unacked_ogm_neighbors(struct ogm_aggreg_node *
 			assertion(-500444, (d <= dev_ip_tree.items));
 
                         dbgf_all(DBGT_INFO, "  redundant=%d via dev=%s to local_id=%X dev_idx=0x%X",
-                                best_lndev->key.dev->tmp_flag_for_to_be_send_adv, best_lndev->key.dev->label_cfg.str,
+                                best_lndev->key.dev->tmp_flag_for_to_be_send_adv, best_lndev->key.dev->ifname_label.str,
                                 ntohl(best_lndev->key.link->key.local_id), best_lndev->key.link->key.dev_idx);
 
                         if (best_lndev->key.dev->tmp_flag_for_to_be_send_adv == NO) {
@@ -847,7 +847,7 @@ struct link_dev_node **lndevs_get_unacked_ogm_neighbors(struct ogm_aggreg_node *
 
                                 dbg_track(DBGT_WARN, "schedule ogm_aggregation_sqn=%3d msgs=%2d dest_bytes=%d tx_attempt=%2d/%d via dev=%s to NB=%s",
                                         oan->sqn, oan->aggregated_msgs, oan->ogm_dest_bytes, (oan->tx_attempt + 1),
-                                        ogm_adv_tx_iters, best_lndev->key.dev->label_cfg.str,
+                                        ogm_adv_tx_iters, best_lndev->key.dev->ifname_label.str,
                                         ipFAsStr(&best_lndev->key.link->link_ip));
                         }
                 }
@@ -882,7 +882,7 @@ struct link_dev_node **lndevs_get_best_tp(struct local_node *except_local)
                         assertion(-500447, (best_lndev->key.dev->active));
 
                         dbgf_all(DBGT_INFO, "  via dev=%s to local_id=%X dev_idx=0x%X (redundant %d)",
-                                best_lndev->key.dev->label_cfg.str, ntohl(best_lndev->key.link->key.local_id),
+                                best_lndev->key.dev->ifname_label.str, ntohl(best_lndev->key.link->key.local_id),
                                 best_lndev->key.link->key.dev_idx, best_lndev->key.dev->tmp_flag_for_to_be_send_adv);
 
                         if (best_lndev->key.dev->tmp_flag_for_to_be_send_adv == NO) {
@@ -1012,7 +1012,7 @@ int32_t tx_msg_hello_adv(struct tx_frame_iterator *it)
 
         adv->hello_sqn = htons(sqn_in);
         
-        dbgf_all(DBGT_INFO, "%s %s SQN %d", ttn->task.dev->label_cfg.str, ttn->task.dev->ip_llocal_str, sqn_in);
+        dbgf_all(DBGT_INFO, "%s %s SQN %d", ttn->task.dev->ifname_label.str, ttn->task.dev->ip_llocal_str, sqn_in);
 
         return sizeof (struct msg_hello_adv);
 }
@@ -1077,7 +1077,7 @@ int32_t tx_msg_dhash_or_description_request(struct tx_frame_iterator *it)
 
 
         dbgf_track(DBGT_INFO, "%s dev=%s to local_id=%X dev_idx=0x%X iterations=%d time=%d requesting neighIID4x=%d %s",
-                it->handls[ttn->task.type].name, ttn->task.dev->label_cfg.str, ntohl(ttn->task.link->key.local_id),
+                it->handls[ttn->task.type].name, ttn->task.dev->ifname_label.str, ntohl(ttn->task.link->key.local_id),
                 ttn->task.link->key.dev_idx, ttn->tx_iterations, ttn->considered_ts, ttn->task.neighIID4x,
                 dhn ? "ALREADY RESOLVED (req cancelled)" : ttn->task.link->local->neigh ? "ABOUT NB HIMSELF" : "ABOUT SOMEBODY");
 
@@ -1324,7 +1324,7 @@ int32_t tx_msg_dev_req(struct tx_frame_iterator *it)
         assertion(-500986, (ttn->tx_iterations > 0 && ttn->considered_ts != bmx_time));
 
         dbgf_track(DBGT_INFO, "%s dev=%s to local_id=%X iterations=%d %s",
-                it->handls[ttn->task.type].name, ttn->task.dev->label_cfg.str, ntohl(ttn->task.u32), ttn->tx_iterations,
+                it->handls[ttn->task.type].name, ttn->task.dev->ifname_label.str, ntohl(ttn->task.u32), ttn->tx_iterations,
                 !local ? "UNKNOWN" : (local->link_adv_sqn == local->packet_link_sqn_ref ? "SOLVED" : "UNSOLVED"));
 
 
@@ -1378,7 +1378,7 @@ int32_t rx_frame_dev_adv( struct rx_frame_iterator *it)
         } else if (((DEVADV_SQN_T) (dev_sqn - local->dev_adv_sqn)) > DEVADV_SQN_DAD_RANGE) {
 
                 dbgf_sys(DBGT_ERR, "DAD-Alert: NB=%s dev=%s dev_sqn=%d dev_sqn_max=%d dad_range=%d",
-                        it->pb->i.llip_str, it->pb->i.iif->label_cfg.str, dev_sqn, local->dev_adv_sqn, DEVADV_SQN_DAD_RANGE);
+                        it->pb->i.llip_str, it->pb->i.iif->ifname_label.str, dev_sqn, local->dev_adv_sqn, DEVADV_SQN_DAD_RANGE);
 
                 purge_local_node(local);
                 
@@ -1388,7 +1388,7 @@ int32_t rx_frame_dev_adv( struct rx_frame_iterator *it)
         } else if (local->dev_adv_sqn != dev_sqn) {
 
                 dbgf_track(DBGT_INFO, "new DEV_ADV from NB=%s local_id=0x%X dev=%s dev_sqn=%d->%d",
-                        it->pb->i.llip_str,  it->pb->i.link->local->local_id , it->pb->i.iif->label_cfg.str,
+                        it->pb->i.llip_str,  it->pb->i.link->local->local_id , it->pb->i.iif->ifname_label.str,
                         local->dev_adv_sqn, dev_sqn);
 
                 if (local->dev_adv)
@@ -1548,7 +1548,7 @@ int32_t tx_msg_link_req(struct tx_frame_iterator *it)
         assertion(-500988, (ttn->tx_iterations > 0 && ttn->considered_ts != bmx_time));
 
         dbgf_track(DBGT_INFO, "%s dev=%s to local_id=%X iterations=%d %s",
-                it->handls[ttn->task.type].name, ttn->task.dev->label_cfg.str, ntohl(ttn->task.u32), ttn->tx_iterations,
+                it->handls[ttn->task.type].name, ttn->task.dev->ifname_label.str, ntohl(ttn->task.u32), ttn->tx_iterations,
                 !local ? "UNKNOWN" : (local->link_adv_sqn == local->packet_link_sqn_ref ? "SOLVED" : "UNSOLVED"));
 
 
@@ -1602,7 +1602,7 @@ int32_t rx_frame_link_adv( struct rx_frame_iterator *it)
         } else {
 
                 dbgf_track(DBGT_INFO, "new LINK_ADV from NB=%s dev=%s link_sqn=%d->%d dev_sqn=%d->%d dev_adv_sqn=%d",
-                        it->pb->i.llip_str, it->pb->i.iif->label_cfg.str, local->link_adv_sqn, it->pb->i.link_sqn,
+                        it->pb->i.llip_str, it->pb->i.iif->ifname_label.str, local->link_adv_sqn, it->pb->i.link_sqn,
                         local->link_adv_dev_sqn_ref, dev_sqn_ref, local->dev_adv_sqn);
 
 
@@ -1881,7 +1881,7 @@ int32_t rx_frame_problem_adv(struct rx_frame_iterator *it)
                         }
 
                         dbgf_sys(DBGT_ERR, "reselect my_local_id=%X (old %X) as signalled by NB=%s via dev=%s",
-                                ntohl(my_local_id), ntohl(adv->local_id), it->pb->i.llip_str, it->pb->i.iif->label_cfg.str);
+                                ntohl(my_local_id), ntohl(adv->local_id), it->pb->i.llip_str, it->pb->i.iif->ifname_label.str);
 
                 }
 
@@ -1989,7 +1989,7 @@ int32_t rx_frame_ogm_advs(struct rx_frame_iterator *it)
                 if (bit_get(neigh->ogm_aggregations_rcvd, AGGREG_SQN_CACHE_RANGE, aggregation_sqn)) {
 
                         dbgf_all(DBGT_INFO, "neigh: id=%s via dev=%s with OLD, already KNOWN ogm_aggregation_sqn=%d",
-                                globalIdAsString(&neigh->dhn->on->global_id), pb->i.iif->label_cfg.str, aggregation_sqn);
+                                globalIdAsString(&neigh->dhn->on->global_id), pb->i.iif->ifname_label.str, aggregation_sqn);
 
                         if (ack_sender)
                                 schedule_tx_task(local->best_tp_lndev, FRAME_TYPE_OGM_ACK, SCHEDULE_MIN_MSG_SIZE, aggregation_sqn, 0, neigh->dhn->myIID4orig, 0);
@@ -2282,7 +2282,7 @@ struct dhash_node *process_dhash_description_neighIID4x
 
 
         dbgf_track(DBGT_INFO, "via dev=%s NB=%s dhash=%8X.. %s neighIID4x=%d  is_sender=%d %s",
-                pb->i.iif->label_cfg.str, pb->i.llip_str, dhash->h.u32[0],
+                pb->i.iif->ifname_label.str, pb->i.llip_str, dhash->h.u32[0],
                 (dsc ? "DESCRIPTION" : (cache ? "CACHED_DESCRIPTION" : (orig_dhn?"KNOWN":"UNDESCRIBED"))),
                 neighIID4x, is_transmitters_iid,
                 invalid ? "INVALIDATED" : (orig_dhn && orig_dhn->on ? globalIdAsString(&orig_dhn->on->global_id) : DBG_NIL));
@@ -2360,7 +2360,7 @@ int32_t rx_frame_description_advs(struct rx_frame_iterator *it)
 
                 dbgf_all( DBGT_INFO, "rcvd %s desc: global_id=%s via_dev=%s via_ip=%s",
                         (dhn && dhn != DHASH_NODE_FAILURE) ? "accepted" : "denied",
-                        globalIdAsString(&desc->globalId), pb->i.iif->label_cfg.str, pb->i.llip_str);
+                        globalIdAsString(&desc->globalId), pb->i.iif->ifname_label.str, pb->i.llip_str);
 
                 if (dhn == DHASH_NODE_FAILURE)
                         return FAILURE;
@@ -2469,7 +2469,7 @@ int32_t rx_msg_hello_adv(struct rx_frame_iterator *it)
         HELLO_SQN_T hello_sqn = ntohs(msg->hello_sqn);
 
         dbgf_all(DBGT_INFO, "NB=%s via dev=%s SQN=%d",
-                pb->i.llip_str, pb->i.iif->label_cfg.str, hello_sqn);
+                pb->i.llip_str, pb->i.iif->ifname_label.str, hello_sqn);
 
         if (it->msg != it->frame_data) {
                 dbgf_sys(DBGT_WARN, "rcvd %d %s messages in frame_msgs_length=%d",
@@ -2827,7 +2827,7 @@ IDM_T rx_frames(struct packet_buff *pb)
 
                 dbgf_track(DBGT_INFO,
                         "schedule DEV_REQ to NB=%s local_id=0x%X via dev=%s dev_adv_sqn=%d link_adv_dev_sqn_ref=%d",
-                        pb->i.llip_str, local->local_id, local->best_tp_lndev->key.dev->label_cfg.str,
+                        pb->i.llip_str, local->local_id, local->best_tp_lndev->key.dev->ifname_label.str,
                         local->dev_adv_sqn, local->link_adv_dev_sqn_ref);
 
                 schedule_tx_task(&pb->i.iif->dummy_lndev, FRAME_TYPE_DEV_REQ, SCHEDULE_MIN_MSG_SIZE, 0, local->local_id, 0, 0);
@@ -2838,7 +2838,7 @@ IDM_T rx_frames(struct packet_buff *pb)
 
                 dbgf_track(DBGT_INFO,
                         "schedule LINK_REQ to NB=%s local_id=0x%X via dev=%s  link_adv_sqn=%d packet_link_sqn_ref=%d",
-                        pb->i.llip_str, local->local_id, local->best_tp_lndev->key.dev->label_cfg.str,
+                        pb->i.llip_str, local->local_id, local->best_tp_lndev->key.dev->ifname_label.str,
                         local->link_adv_sqn, local->packet_link_sqn_ref);
 
                 local->rp_ogm_request_rcvd = 0;
@@ -2864,7 +2864,7 @@ int8_t send_udp_packet(struct packet_buff *pb, struct sockaddr_storage *dst, int
         TRACE_FUNCTION_CALL;
 	int status;
 
-        dbgf_all(DBGT_INFO, "len=%d via dev=%s", pb->i.total_length, pb->i.oif->label_cfg.str);
+        dbgf_all(DBGT_INFO, "len=%d via dev=%s", pb->i.total_length, pb->i.oif->ifname_label.str);
 
 	if ( send_sock == 0 )
 		return 0;
@@ -2888,12 +2888,12 @@ int8_t send_udp_packet(struct packet_buff *pb, struct sockaddr_storage *dst, int
 
                         dbg_mute(60, DBGL_SYS, DBGT_ERR, "can't send: %s. Does firewall accept %s dev=%s port=%i ?",
                                 strerror(errno), family2Str(((struct sockaddr_in*) dst)->sin_family),
-                                pb->i.oif->label_cfg.str ,ntohs(((struct sockaddr_in*) dst)->sin_port));
+                                pb->i.oif->ifname_label.str ,ntohs(((struct sockaddr_in*) dst)->sin_port));
 
 		} else {
 
                         dbg_mute(60, DBGL_SYS, DBGT_ERR, "can't send via fd=%d dev=%s : %s",
-                                send_sock, pb->i.oif->label_cfg.str, strerror(errno));
+                                send_sock, pb->i.oif->ifname_label.str, strerror(errno));
 
 		}
 
@@ -3072,7 +3072,7 @@ void next_tx_task_list(struct dev_node *dev, struct tx_frame_iterator *it, struc
                                         "found %s   link nb: nb_local_id=%X nb_dev_idx=%d nbIP=%s   via lndev: my_dev=%s my_dev_idx=%d with lndev->tx_tasks_list[].items=%d",
                                         it->handls[it->frame_type].name,
                                         ntohl(link->key.local_id), link->key.dev_idx, ipFAsStr(&link->link_ip),
-                                        dev->label_cfg.str, dev->llip_key.idx, it->tx_task_list->items);
+                                        dev->ifname_label.str, dev->llip_key.idx, it->tx_task_list->items);
 
                                 return;
                         }
@@ -3096,7 +3096,7 @@ void tx_packet(void *devp)
         assertion(-500204, (dev));
 
         dev->tx_task = NULL;
-        dbgf_all(DBGT_INFO, "dev=%s", dev->label_cfg.str);
+        dbgf_all(DBGT_INFO, "dev=%s", dev->ifname_label.str);
 
         assertion(-500205, (dev->active));
         ASSERTION(-500788, ((pb.packet.data) == ((uint8_t*) (&pb.packet.header))));
@@ -3142,7 +3142,7 @@ void tx_packet(void *devp)
                         it.ttn = list_entry(lpos, struct tx_task_node, list);
                         item++;
 
-                        dbgf_all(DBGT_INFO, "%s type=%d =%s", dev->label_cfg.str, it.frame_type, handl->name);
+                        dbgf_all(DBGT_INFO, "%s type=%d =%s", dev->ifname_label.str, it.frame_type, handl->name);
 
                         assertion(-500440, (it.ttn->task.type == it.frame_type));
 
@@ -3189,7 +3189,7 @@ void tx_packet(void *devp)
                         }
 
                         dbgf_all(DBGT_INFO, "%s type=%d =%s considered=%d iterations=%d tlv_result=%d item=%d/%d",
-                                dev->label_cfg.str, it.frame_type, handl->name, it.ttn->considered_ts,
+                                dev->ifname_label.str, it.frame_type, handl->name, it.ttn->considered_ts,
                                 it.ttn->tx_iterations, tlv_result, item, it.tx_task_list->items);
 
                         if (tlv_result == TLV_TX_DATA_DONE) {
@@ -3269,7 +3269,7 @@ void tx_packet(void *devp)
                         send_udp_packet(&pb, &dev->tx_netwbrc_addr, dev->unicast_sock);
 
                         dbgf_all(DBGT_INFO, "send packet size=%d  via dev=%s",
-                                pb.i.total_length, dev->label_cfg.str);
+                                pb.i.total_length, dev->ifname_label.str);
 
                         memset(&pb.i, 0, sizeof (pb.i));
 
@@ -3320,7 +3320,7 @@ void tx_packets( void *unused ) {
 
                         } else if (dev->tx_task) {
 
-                                dbgf_sys(DBGT_ERR, "previously scheduled tx_packet( dev=%s ) still pending!", dev->label_cfg.str);
+                                dbgf_sys(DBGT_ERR, "previously scheduled tx_packet( dev=%s ) still pending!", dev->ifname_label.str);
                                 continue;
 
                         } else if (dev->linklayer == TYP_DEV_LL_LAN) {
@@ -3396,7 +3396,7 @@ struct dhash_node * process_description(struct packet_buff *pb, struct descripti
         if ((on = avl_find_item(&orig_tree, &desc->globalId))) {
 
                 dbgf_track(DBGT_INFO, "descSQN=%d (old_sqn=%d) from id=%s via_dev=%s via_ip=%s",
-                        ntohs(desc->descSqn), on->descSqn, globalIdAsString(&desc->globalId), pb->i.iif->label_cfg.str, pb->i.llip_str);
+                        ntohs(desc->descSqn), on->descSqn, globalIdAsString(&desc->globalId), pb->i.iif->ifname_label.str, pb->i.llip_str);
 
                 assertion(-500383, (on->dhn));
 
@@ -3489,7 +3489,7 @@ process_desc0_error:
 process_desc0_ignore:
 
         dbgf_sys(DBGT_WARN, "ignoring global_id=%s rcvd via_dev=%s via_ip=%s",
-                desc ? globalIdAsString(&desc->globalId) : "???", pb->i.iif->label_cfg.str, pb->i.llip_str);
+                desc ? globalIdAsString(&desc->globalId) : "???", pb->i.iif->ifname_label.str, pb->i.llip_str);
 
         if (desc)
                 debugFree(desc, -300109);

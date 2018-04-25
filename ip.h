@@ -479,8 +479,8 @@ struct dev_node {
 //	DEVADV_IDX_T dev_adv_idx; //TODO: Remove (use llip_key.idx instead)
 	int16_t dev_adv_msg;
 
-	IFNAME_T name_phy_cfg;  //key for dev_name_tree
-	IFNAME_T label_cfg;
+	IFNAME_T ifname_label;
+	IFNAME_T ifname_device;  //key for dev_name_tree
 
 	struct link_dev_node dummy_lndev;
 

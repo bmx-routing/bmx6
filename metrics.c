@@ -758,7 +758,7 @@ void lndev_assign_best(struct local_node *only_local, struct link_dev_node *only
         dbgf_all(DBGT_INFO, "only_local=%X only_lndev.link=%s only_lndev.dev=%s",
                 only_local ? ntohl(only_local->local_id) : 0,
                 only_lndev ? ipFAsStr(&only_lndev->key.link->link_ip) : DBG_NIL,
-                only_lndev ? only_lndev->key.dev->label_cfg.str : DBG_NIL);
+                only_lndev ? only_lndev->key.dev->ifname_label.str : DBG_NIL);
 
         struct avl_node *local_an = NULL;
         struct local_node *local;
@@ -789,7 +789,7 @@ void lndev_assign_best(struct local_node *only_local, struct link_dev_node *only
                         while ((only_lndev && (lndev = only_lndev)) || (lndev = list_iterate(&link->lndev_list, lndev))) {
 
                                 dbgf_all(DBGT_INFO, "lndev=%s items=%d",
-                                        lndev->key.dev->label_cfg.str, link->lndev_list.items);
+                                        lndev->key.dev->ifname_label.str, link->lndev_list.items);
 
                                 lndev->timeaware_rx_probe = timeaware_rx_probe(lndev);
                                 lndev->timeaware_tx_probe = timeaware_tx_probe(lndev);
@@ -1072,10 +1072,10 @@ IDM_T update_path_metrics(struct packet_buff *pb, struct orig_node *on, OGM_SQN_
                                 dbg_track(DBGT_INFO, "changed route to global_id=%s ip=%s via_ip=%s via_dev=%s metric=%s   (prev %s %s metric=%s sqn_max=%d sqn_in=%d)",
                                         globalIdAsString(&on->global_id), on->primary_ip_str,
                                         ipFAsStr(&next_rt->path_lndev_best->key.link->link_ip),
-                                        next_rt->path_lndev_best->key.dev->label_cfg.str,
+                                        next_rt->path_lndev_best->key.dev->ifname_label.str,
                                         umetric_to_human(next_rt->mr.umetric),
                                         ipFAsStr(on->curr_rt_lndev ? &on->curr_rt_lndev->key.link->link_ip : &ZERO_IP),
-                                        on->curr_rt_lndev ? on->curr_rt_lndev->key.dev->label_cfg.str : DBG_NIL,
+                                        on->curr_rt_lndev ? on->curr_rt_lndev->key.dev->ifname_label.str : DBG_NIL,
                                         umetric_to_human(on->curr_rt_local ? on->curr_rt_local->mr.umetric : 0),
                                         ogm_sqn_max, ogm_sqn);
 
