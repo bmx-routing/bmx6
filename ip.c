@@ -1135,6 +1135,7 @@ void kernel_get_if_link_config(struct nlmsghdr *nh, void *update_sqnp)
         memcpy(&addr, RTA_DATA(tb[IFLA_ADDRESS]), XMIN(alen, (int)sizeof (addr)));
 
         if (!old_ilx ||
+		old_ilx != new_ilx ||
                 old_ilx->type != if_link_info->ifi_type ||
                 old_ilx->flags != if_link_info->ifi_flags ||
                 old_ilx->alen != alen /*(int)RTA_PAYLOAD(tb[IFLA_ADDRESS])*/ ||
@@ -1158,8 +1159,24 @@ void kernel_get_if_link_config(struct nlmsghdr *nh, void *update_sqnp)
         new_ilx->update_sqn = update_sqn;
         new_ilx->changed = changed;
 
-        if (old_ilx && old_ilx != new_ilx)
+        if (old_ilx && old_ilx != new_ilx) {
+
+                struct if_addr_node *old_ian;
+
+                while ((old_ian = avl_first_item(&old_ilx->if_addr_tree))) {
+
+                        if (old_ian->dev) {
+                                old_ian->dev->hard_conf_changed = YES;
+                                old_ian->dev->if_llocal_addr = NULL;
+                                old_ian->dev->if_global_addr = NULL;
+                        }
+
+                        avl_remove(&old_ilx->if_addr_tree, &old_ian->ip_addr, -300561);
+                        debugFree(old_ian, -300562);
+                }
+
                 debugFree(old_ilx, -300241);
+       }
 
 	return;
 }
