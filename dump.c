@@ -117,7 +117,7 @@ void dump(struct packet_buff *pb)
         uint16_t plength = ntohs(phdr->pkt_length);
 
         dbgf_dump(DBGT_NONE, "%s srcIP=%-16s dev=%-12s udpPayload=%-d",
-                direction == DUMP_DIRECTION_IN ? "in " : "out", pb->i.llip_str, dev->label_cfg.str, plength);
+                direction == DUMP_DIRECTION_IN ? "in " : "out", pb->i.llip_str, dev->ifname_label.str, plength);
 
         dbgf_dump(DBGT_NONE, "%s data: %s",
                 direction == DUMP_DIRECTION_IN ? "in " : "out", memAsHexString(((uint8_t*) phdr), plength));
@@ -158,7 +158,7 @@ void dump(struct packet_buff *pb)
 
         while ((iterator_result = rx_frame_iterate(&it)) > TLV_RX_DATA_DONE) {
 
-                char tnum[4];
+                char tnum[8];
                 char *tname;
                 int16_t frame_msgs = -1;
 
@@ -347,13 +347,13 @@ int32_t opt_traffic_statistics(uint8_t cmd, uint8_t _save, struct opt_type *opt,
 
                 while ((dev = avl_iterate_item(&dev_name_tree, &an))) {
 
-                        if (!strcmp(patch->val, ARG_DUMP_ALL) || !strcmp(patch->val, dev->label_cfg.str)) {
+                        if (!strcmp(patch->val, ARG_DUMP_ALL) || !strcmp(patch->val, dev->ifname_label.str)) {
 
 				struct dump_data **dump_dev_plugin_data = (struct dump_data **)
 				(get_plugin_data(dev, PLUGIN_DATA_DEV, data_dev_plugin_registry));
 
 				if (dev->active && *dump_dev_plugin_data)
-					dbg_traffic_statistics(*dump_dev_plugin_data, cn, dev->label_cfg.str);
+					dbg_traffic_statistics(*dump_dev_plugin_data, cn, dev->ifname_label.str);
 			}
                 }
 
