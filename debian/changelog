@@ -1,0 +1,5 @@
+bmx6 (0.0-1) unstable; urgency=medium
+
+  * Initial release (Closes: #898695)
+
+ -- Steffen Moeller <moeller@debian.org>  Sat, 12 May 2018 19:06:52 +0200

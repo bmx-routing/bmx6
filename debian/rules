@@ -1,0 +1,22 @@
+#!/usr/bin/make -f
+export DH_VERBOSE = 1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+export DEB_CFLAGS_MAINT_APPEND  = -Wall -pedantic
+export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
+
+export INSTALL_PREFIX=$(CURDIR)/debian/bmx6/
+
+%:
+	dh $@
+
+override_dh_auto_install:
+	# do not invoke install
+
+override_dh_auto_build:
+	$(MAKE) INSTALL_PREFIX=$(INSTALL_PREFIX) libs all
+
+override_dh_clean:
+	$(MAKE) clean
+	dh_clean
+	find . \( -name "*.so" -o -name "*.o" \) -delete

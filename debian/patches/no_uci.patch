@@ -1,0 +1,19 @@
+Index: bmx6-0.0/lib/Makefile
+===================================================================
+--- bmx6-0.0.orig/lib/Makefile
++++ bmx6-0.0/lib/Makefile
+@@ -1,11 +1,10 @@
+ 
+ CFLAGS +=
+ LDFLAGS +=
++INSTALL_PREFIX ?=
+ 
+-PLUGINS = $(shell find  -maxdepth 1 -type d | grep -e '^./bmx6_' | sort)
++PLUGINS = $(shell find  -maxdepth 1 -type d | grep -e '^./bmx6_' | sort| grep -v uci )
+ 
+ %:
+-	for d in $(PLUGINS); do $(MAKE) CORE_CFLAGS='$(CORE_CFLAGS)' -C $$d $@ || echo compiling $$d failed; echo;echo; done
+-        echo 2 flags: $(CFLAGS)
+-
++	for d in $(PLUGINS); do $(MAKE) INSTALL_PREFIX="$(INSTALL_PREFIX)" CORE_CFLAGS="$(CORE_CFLAGS)" -C $$d $@ || echo compiling $$d failed; echo;echo; done
+ 
