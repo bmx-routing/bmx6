@@ -1,0 +1,2 @@
+bmx6	usr/sbin
+lib/*/*.so	usr/lib/bmx6

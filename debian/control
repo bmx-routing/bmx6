@@ -1,0 +1,21 @@
+Source: bmx6
+Section: net
+Priority: optional
+Maintainer: Steffen Moeller <moeller@debian.org>
+Build-Depends: debhelper (>= 10),libjson-c-dev
+Standards-Version: 4.1.4
+Homepage: https://github.com/bmx-routing/bmx6
+Vcs-Git: https://github.com/bmx-routing/bmx6/tree/debian.git
+Vcs-Browser: https://github.com/bmx-routing/bmx6/tree/debian
+
+Package: bmx6
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Mesh Networking Protocol
+ BMX supports the interconnection of several hosts on the
+ Internet such that these form a network in their own right,
+ i.e. these behave like a local area network even though
+ these are physically distributed.
+ .
+ Please add some words explaining the complementarity of
+ fastd and batman.
