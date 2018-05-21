@@ -48,7 +48,7 @@
 #endif
 
 #define BMX_BRANCH "BMX6"
-#define BRANCH_VERSION "0.1-alpha" //put exactly one distinct word inside the string like "0.3-pre-alpha" or "0.3-rc1" or "0.3"
+#define BRANCH_VERSION "1.0-dev" //put exactly one distinct word inside the string like "0.3-pre-alpha" or "0.3-rc1" or "0.3"
 
 #define COMPATIBILITY_VERSION 16
 
