@@ -13,30 +13,27 @@ Package: bmx6
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: Layer-3 Mesh Routing Protocol
-
  BMX6 is a IPv6-based mesh routing protocol that supports the dynamic and
  autonomous establishment of end-to-end routes between network nodes based
  on a given physical topology of links and link qualities.
-
+ .
  BMX6 leverages principles of table-driven, proactive, destination-sequenced
- distant-vector (DSDV) routing where sequenced routing
- updates, originated by each node of a network and updated and
- re-broadcasted by each hop, are used to propagate path cost and
- versioning information in the network.
-
+ distant-vector (DSDV) routing where sequenced routing updates, originated
+ by each node of a network and updated and re-broadcasted by each hop, are
+ used to propagate path cost and versioning information in the network.
  In contrast to the traditional DSDV protocol, containing an IP address to
  identify a particular node of the network, the routing update of BMX6
  uses only a verifiably reference to the destination node's description.
  This way, routing information can be combined with the announcement of other
  networking services and name spaces such as addresses, hostname, tunnel, and
  path-metric parameters.
-
+ .
  Compared to Internet routing protocols (such as OSPF, BGP, IS-IS) BMX6 is
  more tailored for mesh and ad-hoc networks and provides autonomous link-,
  and neighbor- discovery.
  Compared to other mesh routing protocols (such as OLSR, batman-adv, babel)
  BMX6 comes with a much more flexible configuration freedom and a very small
  protocol data overhead.
- Compared to many existing overlay-network and VPN solutions (such as openVPN,
+ Compared to many existing overlay-network and VPN solutions (such as OpenVPN,
  Tinc, TOR, fastd, IPSec) BMX6 could provide the base end-to-end IP-routing
  infrastructure that such solutions depend on.
